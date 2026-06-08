@@ -1,0 +1,30 @@
+name: Deploy Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Sync to Hugging Face Spaces
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Export Space requirements
+        run: uv export --format requirements-txt --no-hashes --no-annotate --no-header --output-file requirements.txt
+
+      - name: Sync repository to Space
+        uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: build-small-hackathon/best-man-speech-practice
+          hf_token: ${{ secrets.HF_TOKEN }}
+          space_sdk: gradio
