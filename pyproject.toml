@@ -1,0 +1,9 @@
+[project]
+name = "small-model-hackathon"
+version = "0.1.0"
+description = "A Gradio app for practising best man speeches with small models."
+readme = "README.md"
+requires-python = ">=3.10.4"
+dependencies = [
+    "gradio>=6.17.3",
+]
