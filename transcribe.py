@@ -83,6 +83,7 @@ def transcribe_recording(audio_path: str, language: str = "en") -> str:
     )
     audio_chunk_index = inputs.get("audio_chunk_index")
     inputs = inputs.to(model.device, dtype=model.dtype)
+    inputs.pop("length", None)
 
     with torch.inference_mode():
         outputs = model.generate(**inputs, max_new_tokens=256)

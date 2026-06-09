@@ -10,6 +10,7 @@ uv export \
   --no-hashes \
   --no-annotate \
   --no-header \
+  --no-emit-package spaces \
   --output-file "$tmp_file"
 
 grep -v '^torch==' "$tmp_file" > requirements.txt

@@ -2,7 +2,7 @@
 title: Best Man Speech Coach
 sdk: gradio
 app_file: app.py
-python_version: 3.10.4
+python_version: "3.12"
 ---
 
 # Small Model Hackathon
