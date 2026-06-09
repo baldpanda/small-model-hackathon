@@ -4,7 +4,7 @@
 - `app.py` is the Gradio entrypoint and should stay runnable as `python app.py`.
 - `pyproject.toml` and `uv.lock` define Python dependencies and locked versions.
 - `requirements.txt` is generated for Hugging Face Spaces compatibility.
-- `spec/` contains product and phase notes; treat these as design context, not runtime code.
+- `spec/` contains product and phase notes; use it to define behavior before implementing major features, but keep specs separate from runtime code.
 - `.github/workflows/deploy-space.yml` syncs `main` to the hosted Space.
 
 ## Build, Test, and Development Commands
@@ -30,5 +30,7 @@
 - Include screenshots or short notes for UI changes, and update `requirements.txt` when dependencies change.
 
 ## Agent-Specific Instructions
+- Follow spec-driven development for meaningful features: write or update the relevant spec in `spec/` before implementing code changes.
+- Treat specs as lightweight source-of-truth for intended behavior, acceptance criteria, and phase scope; update them when implementation decisions materially change.
 - Do not edit generated files by hand if they can be regenerated from `uv`.
 - Keep `main` deployable: anything merged there will sync to the Hugging Face Space.
