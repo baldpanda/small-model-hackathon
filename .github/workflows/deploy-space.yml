@@ -19,7 +19,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Export Space requirements
-        run: uv export --format requirements-txt --no-hashes --no-annotate --no-header --output-file requirements.txt
+        run: ./export_space_requirements.sh
 
       - name: Sync repository to Space
         uses: huggingface/hub-sync@v0.1.0
