@@ -13,4 +13,4 @@ uv export \
   --output-file "$tmp_file"
 
 grep -v '^torch==' "$tmp_file" > requirements.txt
-printf 'torch==2.11.0\n' >> requirements.txt
+printf 'torch==2.10.0\n' >> requirements.txt
