@@ -33,7 +33,7 @@ uv run python app.py
 Export Space-compatible dependencies:
 
 ```bash
-uv export --format requirements-txt --no-hashes --no-annotate --no-header --output-file requirements.txt
+./export_space_requirements.sh
 ```
 
 ## Deployment
@@ -43,3 +43,5 @@ The Gradio app is deployed to this Hugging Face Space:
 [build-small-hackathon/best-man-speech-practice](https://huggingface.co/spaces/build-small-hackathon/best-man-speech-practice)
 
 GitHub Actions syncs `main` to the Space. The workflow requires a GitHub Actions secret named `HF_TOKEN` with write access to the Space.
+
+The export script pins `torch==2.11.0` in `requirements.txt` because Hugging Face ZeroGPU rejects marker-based multi-version torch entries even when the Linux pin is otherwise compatible.

@@ -9,7 +9,7 @@
 
 ## Build, Test, and Development Commands
 - `uv run python app.py` starts the local Gradio app.
-- `uv export --format requirements-txt --no-hashes --no-annotate --no-header --output-file requirements.txt` refreshes the Space dependency file after dependency changes.
+- `./export_space_requirements.sh` refreshes the Space dependency file after dependency changes.
 - `git pull` keeps `main` current before starting work.
 
 ## Coding Style & Naming Conventions
