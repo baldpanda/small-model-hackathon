@@ -7,6 +7,7 @@ import soundfile as sf
 
 MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
 MAX_RECORDING_SECONDS = 60
+MODEL_SAMPLE_RATE = 16000
 
 
 def _get_hugging_face_token() -> str | None:
@@ -75,6 +76,19 @@ def transcribe_recording(audio_path: str, language: str = "en") -> str:
         audio = audio.mean(axis=1)
     else:
         audio = audio[:, 0]
+
+    if sample_rate != MODEL_SAMPLE_RATE:
+        try:
+            import librosa
+        except ImportError as exc:
+            raise RuntimeError("Transcription requires librosa to resample microphone audio to 16 kHz.") from exc
+
+        audio = librosa.resample(
+            audio,
+            orig_sr=sample_rate,
+            target_sr=MODEL_SAMPLE_RATE,
+        )
+        sample_rate = MODEL_SAMPLE_RATE
 
     inputs = processor(
         audio,
