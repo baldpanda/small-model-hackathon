@@ -34,15 +34,10 @@ def _load_transcription_stack() -> tuple[object, object, object]:
             "Missing Hugging Face token. Set HF_TOKEN or HUGGINGFACEHUB_API_TOKEN to access the gated Cohere model."
         )
 
-    processor = AutoProcessor.from_pretrained(
-        MODEL_ID,
-        token=token,
-        trust_remote_code=True,
-    )
+    processor = AutoProcessor.from_pretrained(MODEL_ID, token=token)
     model = CohereAsrForConditionalGeneration.from_pretrained(
         MODEL_ID,
         token=token,
-        trust_remote_code=True,
         device_map="auto",
     )
     return torch, processor, model
@@ -78,10 +73,9 @@ def transcribe_recording(audio_path: str, language: str = "en") -> str:
     inputs = processor(
         audio=audio,
         sampling_rate=MODEL_SAMPLE_RATE,
-        return_tensors="pt",
         language=language,
     )
-    audio_chunk_index = inputs.get("audio_chunk_index")
+    audio_chunk_index = inputs.pop("audio_chunk_index", None)
     inputs = inputs.to(model.device, dtype=model.dtype)
 
     with torch.inference_mode():
