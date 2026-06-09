@@ -76,18 +76,27 @@ def transcribe_recording(audio_path: str, language: str = "en") -> str:
         raise RuntimeError(f"Failed to load the recording for transcription: {exc}") from exc
 
     inputs = processor(
-        audio,
+        audio=audio,
         sampling_rate=MODEL_SAMPLE_RATE,
         return_tensors="pt",
         language=language,
     )
+    audio_chunk_index = inputs.get("audio_chunk_index")
     inputs = inputs.to(model.device, dtype=model.dtype)
     inputs.pop("length", None)
 
     with torch.inference_mode():
         outputs = model.generate(**inputs, max_new_tokens=256)
 
-    transcript = processor.decode(outputs, skip_special_tokens=True)
+    if audio_chunk_index is None:
+        transcript = processor.decode(outputs, skip_special_tokens=True)
+    else:
+        transcript = processor.decode(
+            outputs,
+            skip_special_tokens=True,
+            audio_chunk_index=audio_chunk_index,
+            language=language,
+        )
     if isinstance(transcript, list):
         transcript = transcript[0]
 
