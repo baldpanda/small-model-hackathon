@@ -2,6 +2,18 @@ import gradio as gr
 
 from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
 
+try:
+    import spaces
+except ImportError:
+    class _LocalSpaces:
+        @staticmethod
+        def GPU(function=None, **_kwargs):
+            if function is None:
+                return lambda wrapped: wrapped
+            return function
+
+    spaces = _LocalSpaces()
+
 
 COUNTDOWN_HEAD = f"""
 <script>
@@ -102,6 +114,7 @@ def greet_rehearsal(text: str) -> str:
     return f'Speech Coach is alive. You said: "{message}"'
 
 
+@spaces.GPU(duration=120)
 def process_rehearsal(audio_path: str | None) -> tuple[str, str, str]:
     if not audio_path:
         return "", "", "Record a speech first. The app accepts up to 60 seconds."
