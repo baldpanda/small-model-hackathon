@@ -34,7 +34,6 @@ def _load_transcription_stack() -> tuple[object, object, object]:
             "Missing Hugging Face token. Set HF_TOKEN or HUGGINGFACEHUB_API_TOKEN to access the gated Cohere model."
         )
 
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     processor = AutoProcessor.from_pretrained(
         MODEL_ID,
         token=token,
@@ -45,7 +44,6 @@ def _load_transcription_stack() -> tuple[object, object, object]:
         token=token,
         trust_remote_code=True,
         device_map="auto",
-        torch_dtype=torch_dtype,
     )
     return torch, processor, model
 
