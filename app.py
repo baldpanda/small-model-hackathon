@@ -1,18 +1,7 @@
 import gradio as gr
+import spaces
 
 from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
-
-try:
-    import spaces
-except ImportError:
-    class _LocalSpaces:
-        @staticmethod
-        def GPU(function=None, **_kwargs):
-            if function is None:
-                return lambda wrapped: wrapped
-            return function
-
-    spaces = _LocalSpaces()
 
 
 COUNTDOWN_HEAD = f"""
