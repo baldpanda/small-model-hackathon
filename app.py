@@ -1,25 +1,165 @@
 import gradio as gr
 
+from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
+
+
+COUNTDOWN_HEAD = f"""
+<script>
+(() => {{
+  const limitSeconds = {MAX_RECORDING_SECONDS};
+  let timerId = null;
+  let secondsLeft = limitSeconds;
+  let lastButton = null;
+
+  const formatSeconds = (value) => {{
+    const minutes = Math.floor(value / 60);
+    const seconds = value % 60;
+    return `${{minutes}}:${{String(seconds).padStart(2, "0")}}`;
+  }};
+
+  const updateCountdown = (message) => {{
+    const status = document.querySelector("#recording-status");
+    if (status) {{
+      status.textContent = message;
+    }}
+  }};
+
+  const stopTimer = (message) => {{
+    if (timerId) {{
+      window.clearInterval(timerId);
+      timerId = null;
+    }}
+    secondsLeft = limitSeconds;
+    lastButton = null;
+    updateCountdown(message ?? `Recording limit: ${{formatSeconds(limitSeconds)}}`);
+  }};
+
+  const stopRecording = () => {{
+    if (lastButton) {{
+      lastButton.click();
+    }}
+  }};
+
+  const startTimer = (button) => {{
+    if (timerId) {{
+      return;
+    }}
+
+    lastButton = button;
+    secondsLeft = limitSeconds;
+    updateCountdown(`Recording... ${{formatSeconds(secondsLeft)}} remaining`);
+
+    timerId = window.setInterval(() => {{
+      secondsLeft -= 1;
+      if (secondsLeft <= 0) {{
+        stopTimer("Reached 1:00. Recording stopped. Transcribe when ready.");
+        stopRecording();
+        return;
+      }}
+
+      updateCountdown(`Recording... ${{formatSeconds(secondsLeft)}} remaining`);
+    }}, 1000);
+  }};
+
+  const wireAudioButtons = () => {{
+    const root = document.querySelector("#speech-audio");
+    if (!root) {{
+      window.setTimeout(wireAudioButtons, 500);
+      return;
+    }}
+
+    root.addEventListener("click", (event) => {{
+      const button = event.target.closest("button");
+      if (!button) {{
+        return;
+      }}
+
+      window.setTimeout(() => {{
+        const label = (button.getAttribute("aria-label") || button.innerText || "").toLowerCase();
+        if (label.includes("record") || label.includes("stop")) {{
+          if (timerId) {{
+            stopTimer("Recording stopped. Transcribe when ready.");
+          }} else {{
+            startTimer(button);
+          }}
+        }}
+      }}, 0);
+    }});
+  }};
+
+  window.addEventListener("load", wireAudioButtons);
+  window.addEventListener("beforeunload", () => stopTimer());
+}})();
+</script>
+"""
+
 
 def greet_rehearsal(text: str) -> str:
     message = text.strip()
     if not message:
-        return "Speech Coach is alive. Try typing a short rehearsal note."
+        return "Speech Coach is alive. Try recording a short rehearsal."
 
     return f'Speech Coach is alive. You said: "{message}"'
 
 
-demo = gr.Interface(
-    fn=greet_rehearsal,
-    inputs=gr.Textbox(
-        label="Test message",
-        placeholder="I'm testing the app.",
-    ),
-    outputs=gr.Textbox(label="App response"),
-    title="Best Man Speech Coach",
-    description="A tiny smoke test for the hackathon app.",
-)
+def process_rehearsal(audio_path: str | None) -> tuple[str, str, str]:
+    if not audio_path:
+        return "", "", "Record a speech first. The app accepts up to 60 seconds."
+
+    try:
+        transcript = transcribe_recording(audio_path)
+    except ValueError as exc:
+        return "", "", str(exc)
+    except RuntimeError as exc:
+        return "", "", str(exc)
+    except Exception as exc:
+        return "", "", f"Transcription failed: {exc}"
+
+    return transcript, greet_rehearsal(transcript), "Transcription complete."
+
+
+with gr.Blocks(title="Best Man Speech Coach") as demo:
+    gr.Markdown("# Best Man Speech Coach")
+    gr.Markdown(
+        "Record up to one minute of rehearsal audio, transcribe it with Cohere Transcribe, "
+        "then run the transcript through the app's existing echo response."
+    )
+
+    audio_input = gr.Audio(
+        sources=["microphone"],
+        type="filepath",
+        label="Speech recording",
+        elem_id="speech-audio",
+    )
+    countdown = gr.HTML(
+        f"<div id='recording-status'>Recording limit: 1:00</div>",
+        label="Recording timer",
+    )
+    transcribe_button = gr.Button("Transcribe speech", variant="primary")
+
+    transcript_output = gr.Textbox(
+        label="Transcript",
+        lines=10,
+        placeholder="Your transcript will appear here after recording.",
+    )
+    response_output = gr.Textbox(
+        label="App response",
+        lines=4,
+        placeholder="The echo response will appear here after transcription.",
+    )
+    status_output = gr.Textbox(
+        label="Status",
+        lines=2,
+        interactive=False,
+        value="Ready to record.",
+    )
+
+    transcribe_button.click(
+        fn=process_rehearsal,
+        inputs=audio_input,
+        outputs=[transcript_output, response_output, status_output],
+    )
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(head=COUNTDOWN_HEAD)

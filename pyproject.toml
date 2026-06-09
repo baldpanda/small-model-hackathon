@@ -6,5 +6,12 @@ readme = "README.md"
 requires-python = ">=3.10.4"
 dependencies = [
     "gradio>=6.17.3",
+    "huggingface-hub>=1.18.0",
     "pydantic>=2.11.10,<=2.12.5",
+    "protobuf>=6.33.1",
+    "sentencepiece>=0.2.1",
+    "soundfile>=0.13.1",
+    "torch>=2.10.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+    "torch>=2.2.2,<2.3.0; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "transformers>=5.4.0",
 ]
