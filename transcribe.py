@@ -96,18 +96,13 @@ def transcribe_recording(audio_path: str, language: str = "en") -> str:
         return_tensors="pt",
         language=language,
     )
-    audio_chunk_index = inputs.get("audio_chunk_index")
     inputs = inputs.to(model.device, dtype=model.dtype)
+    inputs.pop("length", None)
 
     with torch.inference_mode():
         outputs = model.generate(**inputs, max_new_tokens=256)
 
-    decode_kwargs = {"skip_special_tokens": True}
-    if audio_chunk_index is not None:
-        decode_kwargs["audio_chunk_index"] = audio_chunk_index
-        decode_kwargs["language"] = language
-
-    transcript = processor.decode(outputs, **decode_kwargs)
+    transcript = processor.decode(outputs, skip_special_tokens=True)
     if isinstance(transcript, list):
         transcript = transcript[0]
 
