@@ -8,8 +8,6 @@ import soundfile as sf
 MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
 MAX_RECORDING_SECONDS = 60
 MODEL_SAMPLE_RATE = 16000
-CHUNK_SECONDS = 15
-CHUNK_SAMPLES = MODEL_SAMPLE_RATE * CHUNK_SECONDS
 
 
 def _get_hugging_face_token() -> str | None:
@@ -64,34 +62,6 @@ def _validate_duration(audio_path: str) -> float:
     return duration_seconds
 
 
-def _iter_audio_chunks(audio):
-    for start in range(0, len(audio), CHUNK_SAMPLES):
-        chunk = audio[start : start + CHUNK_SAMPLES]
-        if len(chunk):
-            yield chunk
-
-
-def _transcribe_audio_chunk(torch, processor, model, audio, language: str) -> str:
-    inputs = processor(
-        audio=audio,
-        sampling_rate=MODEL_SAMPLE_RATE,
-        return_tensors="pt",
-        language=language,
-    )
-    inputs = inputs.to(model.device, dtype=model.dtype)
-    inputs.pop("length", None)
-    inputs.pop("audio_chunk_index", None)
-
-    with torch.inference_mode():
-        outputs = model.generate(**inputs, max_new_tokens=256)
-
-    transcript = processor.decode(outputs, skip_special_tokens=True)
-    if isinstance(transcript, list):
-        transcript = transcript[0]
-
-    return transcript.strip()
-
-
 def transcribe_recording(audio_path: str, language: str = "en") -> str:
     _validate_duration(audio_path)
     torch, processor, model = _load_transcription_stack()
@@ -105,11 +75,31 @@ def transcribe_recording(audio_path: str, language: str = "en") -> str:
     except Exception as exc:
         raise RuntimeError(f"Failed to load the recording for transcription: {exc}") from exc
 
-    transcripts = [
-        _transcribe_audio_chunk(torch, processor, model, chunk, language)
-        for chunk in _iter_audio_chunks(audio)
-    ]
-    text = " ".join(transcript for transcript in transcripts if transcript).strip()
+    inputs = processor(
+        audio=audio,
+        sampling_rate=MODEL_SAMPLE_RATE,
+        return_tensors="pt",
+        language=language,
+    )
+    audio_chunk_index = inputs.get("audio_chunk_index")
+    inputs = inputs.to(model.device, dtype=model.dtype)
+
+    with torch.inference_mode():
+        outputs = model.generate(**inputs, max_new_tokens=256)
+
+    if audio_chunk_index is None:
+        transcript = processor.decode(outputs, skip_special_tokens=True)
+    else:
+        transcript = processor.decode(
+            outputs,
+            skip_special_tokens=True,
+            audio_chunk_index=audio_chunk_index,
+            language=language,
+        )
+    if isinstance(transcript, list):
+        transcript = transcript[0]
+
+    text = transcript.strip()
     if not text:
         raise RuntimeError("The transcription model returned an empty transcript. Try recording again with clearer audio.")
 
