@@ -1,6 +1,7 @@
 import gradio as gr
 import spaces
 
+from review import review_speech
 from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
 
 
@@ -95,14 +96,6 @@ COUNTDOWN_HEAD = f"""
 """
 
 
-def greet_rehearsal(text: str) -> str:
-    message = text.strip()
-    if not message:
-        return "Speech Coach is alive. Try recording a short rehearsal."
-
-    return f'Speech Coach is alive. You said: "{message}"'
-
-
 @spaces.GPU(duration=120)
 def process_rehearsal(audio_path: str | None) -> tuple[str, str, str]:
     if not audio_path:
@@ -117,14 +110,23 @@ def process_rehearsal(audio_path: str | None) -> tuple[str, str, str]:
     except Exception as exc:
         return "", "", f"Transcription failed: {exc}"
 
-    return transcript, greet_rehearsal(transcript), "Transcription complete."
+    try:
+        feedback = review_speech(transcript)
+    except ValueError as exc:
+        return transcript, str(exc), "Transcription complete. Review failed."
+    except RuntimeError as exc:
+        return transcript, str(exc), "Transcription complete. Review failed."
+    except Exception as exc:
+        return transcript, f"Review failed: {exc}", "Transcription complete. Review failed."
+
+    return transcript, feedback, "Transcription and review complete."
 
 
 with gr.Blocks(title="Best Man Speech Coach") as demo:
     gr.Markdown("# Best Man Speech Coach")
     gr.Markdown(
         "Record up to one minute of rehearsal audio, transcribe it with Cohere Transcribe, "
-        "then run the transcript through the app's existing echo response."
+        "then review the transcript with OpenBMB MiniCPM5."
     )
 
     audio_input = gr.Audio(
@@ -137,17 +139,17 @@ with gr.Blocks(title="Best Man Speech Coach") as demo:
         f"<div id='recording-status'>Recording limit: 1:00</div>",
         label="Recording timer",
     )
-    transcribe_button = gr.Button("Transcribe speech", variant="primary")
+    transcribe_button = gr.Button("Review speech", variant="primary")
 
     transcript_output = gr.Textbox(
         label="Transcript",
         lines=10,
         placeholder="Your transcript will appear here after recording.",
     )
-    response_output = gr.Textbox(
-        label="App response",
-        lines=4,
-        placeholder="The echo response will appear here after transcription.",
+    feedback_output = gr.Textbox(
+        label="Speech feedback",
+        lines=12,
+        placeholder="Speech feedback will appear here after transcription.",
     )
     status_output = gr.Textbox(
         label="Status",
@@ -159,7 +161,7 @@ with gr.Blocks(title="Best Man Speech Coach") as demo:
     transcribe_button.click(
         fn=process_rehearsal,
         inputs=audio_input,
-        outputs=[transcript_output, response_output, status_output],
+        outputs=[transcript_output, feedback_output, status_output],
     )
 
 

@@ -89,8 +89,9 @@ Dependency compatibility:
 
 - The current project pins `transformers>=5.4.0,<5.5.0` and `torch` through `uv` to preserve the known-working Cohere transcription stack.
 - The MiniCPM5 model card recommends `transformers>=5.6`, which conflicts with the current upper bound.
-- Phase 4 implementation should either prove MiniCPM5 works with the current pin or upgrade `transformers` to a MiniCPM5-compatible range and re-test Cohere transcription before merging.
-- If dependency pins change, document the compatibility decision here and regenerate `requirements.txt` through `./export_space_requirements.sh`.
+- Phase 4 implementation upgrades `transformers` to `>=5.6.0,<5.7.0` so MiniCPM5 can use its documented Transformers path.
+- Before merging, re-test Cohere transcription with the upgraded Transformers stack and use the Phase 4 model canary to prove both models can run in one process.
+- Regenerate `requirements.txt` through `./export_space_requirements.sh` after dependency changes.
 
 This model choice helps the project target OpenBMB sponsor-award eligibility and the broader small-model spirit of the hackathon.
 

@@ -16,5 +16,5 @@ dependencies = [
     "spaces>=0.30.0",
     "torch>=2.10.0,<2.11.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
     "torch>=2.2.2,<2.3.0; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-    "transformers>=5.4.0,<5.5.0",
+    "transformers>=5.6.0,<5.7.0",
 ]
