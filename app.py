@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import gradio as gr
 import spaces
 
@@ -6,6 +8,8 @@ from review import review_speech
 from timing import summarize_timing
 from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
 
+
+APP_DIR = Path(__file__).parent
 
 COUNTDOWN_HEAD = f"""
 <script>
@@ -97,6 +101,15 @@ COUNTDOWN_HEAD = f"""
 </script>
 """
 
+CUSTOM_CSS = (APP_DIR / "assets" / "scorecard.css").read_text()
+
+SPEECH_FEEDBACK_SECTIONS = (
+    "What worked",
+    "What to sharpen",
+    "Try this next time",
+    "Bottom line",
+)
+
 
 @spaces.GPU(duration=120)
 def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
@@ -118,13 +131,37 @@ def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
     try:
         feedback = review_speech(transcript)
     except ValueError as exc:
-        return transcript, str(exc), timing_feedback, filler_feedback, "Transcription complete. Review failed."
+        return (
+            transcript,
+            _format_speech_feedback_markdown(str(exc)),
+            _format_metric_markdown(timing_feedback),
+            _format_metric_markdown(filler_feedback),
+            "Transcription complete. Review failed.",
+        )
     except RuntimeError as exc:
-        return transcript, str(exc), timing_feedback, filler_feedback, "Transcription complete. Review failed."
+        return (
+            transcript,
+            _format_speech_feedback_markdown(str(exc)),
+            _format_metric_markdown(timing_feedback),
+            _format_metric_markdown(filler_feedback),
+            "Transcription complete. Review failed.",
+        )
     except Exception as exc:
-        return transcript, f"Review failed: {exc}", timing_feedback, filler_feedback, "Transcription complete. Review failed."
+        return (
+            transcript,
+            _format_speech_feedback_markdown(f"Review failed: {exc}"),
+            _format_metric_markdown(timing_feedback),
+            _format_metric_markdown(filler_feedback),
+            "Transcription complete. Review failed.",
+        )
 
-    return transcript, feedback, timing_feedback, filler_feedback, "Transcription, review, timing, and filler analysis complete."
+    return (
+        transcript,
+        _format_speech_feedback_markdown(feedback),
+        _format_metric_markdown(timing_feedback),
+        _format_metric_markdown(filler_feedback),
+        "Transcription, review, timing, and filler analysis complete.",
+    )
 
 
 def _build_timing_feedback(audio_path: str, transcript: str) -> str:
@@ -141,57 +178,120 @@ def _build_filler_feedback(transcript: str) -> str:
         return f"Filler analysis failed: {exc}"
 
 
-with gr.Blocks(title="Best Man Speech Coach") as demo:
-    gr.Markdown("# Best Man Speech Coach")
-    gr.Markdown(
-        "Record up to one minute of rehearsal audio, transcribe it with Cohere Transcribe, "
-        "then review the transcript with OpenBMB MiniCPM5 and measured delivery feedback."
-    )
+def _format_speech_feedback_markdown(feedback: str) -> str:
+    lines: list[str] = []
+    for line in feedback.strip().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped in SPEECH_FEEDBACK_SECTIONS:
+            if lines:
+                lines.append("")
+            lines.append(f"**{stripped}**")
+            lines.append("")
+        else:
+            lines.append(stripped)
+    return "\n".join(lines)
 
-    audio_input = gr.Audio(
-        sources=["microphone"],
-        type="filepath",
-        label="Speech recording",
-        elem_id="speech-audio",
-    )
-    countdown = gr.HTML(
-        f"<div id='recording-status'>Recording limit: 1:00</div>",
-        label="Recording timer",
-    )
-    transcribe_button = gr.Button("Review speech", variant="primary")
 
-    transcript_output = gr.Textbox(
-        label="Transcript",
-        lines=10,
-        placeholder="Your transcript will appear here after recording.",
-    )
-    feedback_output = gr.Textbox(
-        label="Speech feedback",
-        lines=12,
-        placeholder="Speech feedback will appear here after transcription.",
-    )
-    timing_output = gr.Textbox(
-        label="Timing feedback",
-        lines=5,
-        placeholder="Timing feedback will appear here after transcription.",
-    )
-    filler_output = gr.Textbox(
-        label="Filler feedback",
-        lines=7,
-        placeholder="Filler feedback will appear here after transcription.",
-    )
-    status_output = gr.Textbox(
-        label="Status",
-        lines=2,
-        interactive=False,
-        value="Ready to record.",
-    )
+def _format_metric_markdown(summary: str) -> str:
+    lines: list[str] = []
+    for line in summary.strip().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("- "):
+            lines.append(stripped)
+        elif ":" in stripped:
+            label, value = stripped.split(":", 1)
+            lines.append(f"- **{label}:**{value}")
+        else:
+            lines.append(stripped)
+    return "\n".join(lines)
 
-    transcribe_button.click(
-        fn=process_rehearsal,
-        inputs=audio_input,
-        outputs=[transcript_output, feedback_output, timing_output, filler_output, status_output],
-    )
+
+with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
+    with gr.Column(elem_id="wedding-app"):
+        gr.HTML(
+            """
+            <section id="hero-panel">
+              <div class="kicker">Build Small Hackathon rehearsal desk</div>
+              <h1>Best Man Speech Coach</h1>
+              <p>
+                Record a one-minute run-through and get a wedding-scorecard readout:
+                transcript, structure notes, pacing, and filler habits before the next toast.
+              </p>
+              <div class="stamp">Off-brand Gradio edition</div>
+            </section>
+            """
+        )
+
+        with gr.Row(elem_id="practice-grid"):
+            with gr.Column(scale=7, elem_classes=["scorecard-card"]):
+                gr.Markdown(
+                    "## Rehearsal Booth\n"
+                    "Speak naturally. The recording cap keeps each pass short enough to retry."
+                )
+                audio_input = gr.Audio(
+                    sources=["microphone"],
+                    type="filepath",
+                    label="Speech recording",
+                    elem_id="speech-audio",
+                )
+                countdown = gr.HTML(
+                    f"<div id='recording-status'>Recording limit: 1:00</div>",
+                    label="Recording timer",
+                )
+                transcribe_button = gr.Button(
+                    "Review speech",
+                    variant="primary",
+                    elem_id="review-button",
+                )
+
+            with gr.Column(scale=5, elem_classes=["scorecard-card"]):
+                gr.Markdown("## Scorecard Status")
+                status_output = gr.Markdown(
+                    value="Ready to record.",
+                    elem_id="status-output",
+                )
+
+        with gr.Row(elem_id="results-grid"):
+            with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
+                gr.Markdown("## Transcript")
+                transcript_output = gr.Textbox(
+                    label="Rehearsal transcript",
+                    lines=14,
+                    placeholder="Your transcript will appear here after recording.",
+                    elem_id="transcript-output",
+                )
+
+            with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
+                gr.Markdown("## Speech Feedback")
+                feedback_output = gr.Markdown(
+                    value="_Speech feedback will appear here after transcription._",
+                    elem_classes=["score-output"],
+                )
+
+        with gr.Row():
+            with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
+                gr.Markdown("## Timing Feedback")
+                timing_output = gr.Markdown(
+                    value="_Timing feedback will appear here after transcription._",
+                    elem_classes=["score-output"],
+                )
+
+            with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
+                gr.Markdown("## Filler Feedback")
+                filler_output = gr.Markdown(
+                    value="_Filler feedback will appear here after transcription._",
+                    elem_classes=["score-output"],
+                )
+
+        transcribe_button.click(
+            fn=process_rehearsal,
+            inputs=audio_input,
+            outputs=[transcript_output, feedback_output, timing_output, filler_output, status_output],
+        )
 
 
 if __name__ == "__main__":
