@@ -1,7 +1,9 @@
 import gradio as gr
 import spaces
 
+from filler_words import summarize_fillers
 from review import review_speech
+from timing import summarize_timing
 from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
 
 
@@ -97,36 +99,53 @@ COUNTDOWN_HEAD = f"""
 
 
 @spaces.GPU(duration=120)
-def process_rehearsal(audio_path: str | None) -> tuple[str, str, str]:
+def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
     if not audio_path:
-        return "", "", "Record a speech first. The app accepts up to 60 seconds."
+        return "", "", "", "", "Record a speech first. The app accepts up to 60 seconds."
 
     try:
         transcript = transcribe_recording(audio_path)
     except ValueError as exc:
-        return "", "", str(exc)
+        return "", "", "", "", str(exc)
     except RuntimeError as exc:
-        return "", "", str(exc)
+        return "", "", "", "", str(exc)
     except Exception as exc:
-        return "", "", f"Transcription failed: {exc}"
+        return "", "", "", "", f"Transcription failed: {exc}"
+
+    timing_feedback = _build_timing_feedback(audio_path, transcript)
+    filler_feedback = _build_filler_feedback(transcript)
 
     try:
         feedback = review_speech(transcript)
     except ValueError as exc:
-        return transcript, str(exc), "Transcription complete. Review failed."
+        return transcript, str(exc), timing_feedback, filler_feedback, "Transcription complete. Review failed."
     except RuntimeError as exc:
-        return transcript, str(exc), "Transcription complete. Review failed."
+        return transcript, str(exc), timing_feedback, filler_feedback, "Transcription complete. Review failed."
     except Exception as exc:
-        return transcript, f"Review failed: {exc}", "Transcription complete. Review failed."
+        return transcript, f"Review failed: {exc}", timing_feedback, filler_feedback, "Transcription complete. Review failed."
 
-    return transcript, feedback, "Transcription and review complete."
+    return transcript, feedback, timing_feedback, filler_feedback, "Transcription, review, timing, and filler analysis complete."
+
+
+def _build_timing_feedback(audio_path: str, transcript: str) -> str:
+    try:
+        return summarize_timing(audio_path, transcript)
+    except Exception as exc:
+        return f"Timing analysis failed: {exc}"
+
+
+def _build_filler_feedback(transcript: str) -> str:
+    try:
+        return summarize_fillers(transcript)
+    except Exception as exc:
+        return f"Filler analysis failed: {exc}"
 
 
 with gr.Blocks(title="Best Man Speech Coach") as demo:
     gr.Markdown("# Best Man Speech Coach")
     gr.Markdown(
         "Record up to one minute of rehearsal audio, transcribe it with Cohere Transcribe, "
-        "then review the transcript with OpenBMB MiniCPM5."
+        "then review the transcript with OpenBMB MiniCPM5 and measured delivery feedback."
     )
 
     audio_input = gr.Audio(
@@ -151,6 +170,16 @@ with gr.Blocks(title="Best Man Speech Coach") as demo:
         lines=12,
         placeholder="Speech feedback will appear here after transcription.",
     )
+    timing_output = gr.Textbox(
+        label="Timing feedback",
+        lines=5,
+        placeholder="Timing feedback will appear here after transcription.",
+    )
+    filler_output = gr.Textbox(
+        label="Filler feedback",
+        lines=7,
+        placeholder="Filler feedback will appear here after transcription.",
+    )
     status_output = gr.Textbox(
         label="Status",
         lines=2,
@@ -161,7 +190,7 @@ with gr.Blocks(title="Best Man Speech Coach") as demo:
     transcribe_button.click(
         fn=process_rehearsal,
         inputs=audio_input,
-        outputs=[transcript_output, feedback_output, status_output],
+        outputs=[transcript_output, feedback_output, timing_output, filler_output, status_output],
     )
 
 
