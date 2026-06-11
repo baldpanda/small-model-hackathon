@@ -2,9 +2,9 @@
 
 ## Goal
 
-Replace the phase 3 echo response with useful best man speech feedback generated from the transcript.
+Replace the phase 3 echo response with useful speech rehearsal feedback generated from the transcript.
 
-Phase 4 should take the transcript produced by the current recording flow, review it with `openbmb/MiniCPM5-1B`, and return concise, practical feedback that helps the speaker improve the next rehearsal.
+Phase 4 should take the transcript produced by the current recording flow, review it with `openbmb/MiniCPM5-1B`, and return concise, practical feedback that helps the speaker improve the next rehearsal. Best man speeches remain a core use case, but the review should infer the speech context from the transcript rather than assuming every rehearsal is a wedding speech.
 
 This phase is about turning the working transcription loop into the first genuinely useful speech-coaching loop while keeping the scope narrow.
 
@@ -15,7 +15,7 @@ Phase 3 proves that the app can capture speech, transcribe it, and hand the tran
 The next highest-value step is to replace the placeholder echo with model-backed review. This de-risks:
 
 - loading a second small model in the Space
-- prompt design for best man speech feedback
+- prompt design for context-aware speech feedback
 - transcript handoff from transcription to review
 - user-facing error handling when review generation fails
 - sponsor-award fit for OpenBMB models
@@ -24,7 +24,7 @@ This supports the manifesto principle: use small models, focused prompts, and cl
 
 ## User Story
 
-As a best man rehearsing out loud, I want the app to review what I said and tell me what to improve next, so I can practise without needing another person to listen every time.
+As someone rehearsing out loud, I want the app to review what I said and tell me what to improve next, so I can practise without needing another person to listen every time.
 
 ## Scope
 
@@ -32,7 +32,7 @@ Phase 4 includes:
 
 - using the existing transcript output as the review input
 - local small-model review with `openbmb/MiniCPM5-1B`
-- best man speech feedback focused on structure, clarity, warmth, audience fit, and next rehearsal priorities
+- context-aware speech feedback focused on clarity, structure, audience fit, and next rehearsal priorities
 - a clear feedback output in the Gradio interface
 - user-readable errors when review generation fails
 - keeping the model combination within the hackathon's 32B total model-size limit
@@ -43,6 +43,7 @@ Phase 4 does not include:
 - duration, words-per-minute, or target-length feedback
 - transcript editing before review
 - full speech rewriting
+- assuming every transcript is a best man or wedding speech
 - NVIDIA Nemotron integration
 - llama.cpp runtime integration
 - video, image, or multimodal review
@@ -58,7 +59,7 @@ Required behavior:
 - The app transcribes the recording with the existing transcription path.
 - The app sends the transcript to the review model.
 - The app shows the transcript and generated speech feedback.
-- The feedback is specific to best man speeches.
+- The feedback is specific to the speech context visible in the transcript.
 - The feedback avoids rewriting the whole speech by default.
 - The feedback gives the speaker concrete things to practise next.
 
@@ -101,12 +102,14 @@ The review should be readable as a short coaching note, not a scorecard.
 
 Expected sections:
 
-- Overall impression
-- What is working
-- What to improve
-- Next rehearsal checklist
+- What worked
+- What to sharpen
+- Try this next time
+- Bottom line
 
-The feedback should be supportive, direct, and specific. It should preserve the speaker's own voice, personal stories, and natural humour. It should avoid generic wedding-speech advice that could apply to any transcript.
+The feedback should use an honest sandwich: one real strength, one or two direct improvements, and a practical confidence-building next step. It should be supportive, direct, and specific. It should preserve the speaker's own voice, personal stories, and natural humour when those are present. It should avoid generic wedding-speech advice unless the transcript actually appears to be a wedding speech.
+
+For short or functional speeches, such as a Toastmasters grammarian role introduction, the review should say there is limited material to assess and give proportionate feedback. It should avoid invented comments about delivery confidence, story development, jokes, wedding audience warmth, or emotional arc when those are not present in the transcript.
 
 ## UI Shape
 
@@ -125,8 +128,8 @@ The first review version should avoid additional controls unless they are requir
 
 - A valid recording returns a readable transcript.
 - The app returns model-generated feedback from `openbmb/MiniCPM5-1B`.
-- The feedback is tailored to best man speech rehearsal.
-- The feedback includes strengths, improvements, and a short next rehearsal checklist.
+- The feedback is tailored to the apparent speech context, including best man speeches and Toastmasters-style role introductions.
+- The feedback includes a real strength, direct improvement advice, and a practical next step.
 - The feedback does not rewrite the full speech by default.
 - If review generation fails, the transcript remains visible and the app returns a clear user-readable error.
 - The app remains Gradio-hosted and local-model-based.
@@ -143,7 +146,7 @@ The first review version should avoid additional controls unless they are requir
 ## Implementation Sketch
 
 1. Add a `review.py` helper that loads and caches `openbmb/MiniCPM5-1B`.
-2. Add a `review_speech(transcript: str) -> str` function with a fixed best man speech feedback prompt.
+2. Add a `review_speech(transcript: str) -> str` function with a fixed context-aware speech feedback prompt.
 3. Replace the phase 3 echo response call in `app.py` with the review helper.
 4. Keep transcript output visible even if review generation fails.
 5. Update UI copy and output labels from echo language to review language.
