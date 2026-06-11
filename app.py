@@ -277,6 +277,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                 gr.Markdown("## Timing Feedback")
                 timing_output = gr.Markdown(
                     value="_Timing feedback will appear here after transcription._",
+                    elem_id="timing-output",
                     elem_classes=["score-output"],
                 )
 

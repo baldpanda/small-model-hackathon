@@ -231,25 +231,40 @@
   background: rgba(255, 251, 242, 0.78);
   border: 1px solid var(--soft-line);
   border-radius: 8px;
-  color: var(--ink);
+  color: var(--ink) !important;
   min-height: 140px;
   padding: 16px;
 }
 
+.score-output,
+.score-output * {
+  color: var(--ink) !important;
+}
+
 .score-output p,
-.score-output li {
-  color: var(--ink);
+.score-output li,
+.score-output ul {
+  color: var(--ink) !important;
   font-size: 1.02rem;
   line-height: 1.55;
 }
 
 .score-output strong {
-  color: var(--burgundy);
+  color: var(--burgundy) !important;
 }
 
 .score-output ul {
   margin-top: 8px;
   padding-left: 1.25rem;
+}
+
+#timing-output,
+#timing-output * {
+  color: var(--ink) !important;
+}
+
+#timing-output strong {
+  color: var(--burgundy) !important;
 }
 
 #status-output {
