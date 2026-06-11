@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 
 
 COHERE_MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
 MINICPM_MODEL_ID = "openbmb/MiniCPM5-1B"
 SAMPLE_RATE = 16000
+LOGGER = logging.getLogger("phase4_models")
 
 
 def get_hugging_face_token() -> str | None:
@@ -28,19 +30,19 @@ def check_imports() -> None:
     import transformers
     from transformers import AutoModelForCausalLM, AutoProcessor, AutoTokenizer, CohereAsrForConditionalGeneration
 
-    print(f"torch={torch.__version__}")
-    print(f"transformers={transformers.__version__}")
-    print(f"AutoModelForCausalLM={AutoModelForCausalLM.__name__}")
-    print(f"AutoProcessor={AutoProcessor.__name__}")
-    print(f"AutoTokenizer={AutoTokenizer.__name__}")
-    print(f"CohereAsrForConditionalGeneration={CohereAsrForConditionalGeneration.__name__}")
+    LOGGER.info("torch=%s", torch.__version__)
+    LOGGER.info("transformers=%s", transformers.__version__)
+    LOGGER.info("AutoModelForCausalLM=%s", AutoModelForCausalLM.__name__)
+    LOGGER.info("AutoProcessor=%s", AutoProcessor.__name__)
+    LOGGER.info("AutoTokenizer=%s", AutoTokenizer.__name__)
+    LOGGER.info("CohereAsrForConditionalGeneration=%s", CohereAsrForConditionalGeneration.__name__)
 
 
 def load_minicpm(token: str | None):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    print(f"Loading {MINICPM_MODEL_ID}")
+    LOGGER.info("Loading %s", MINICPM_MODEL_ID)
     tokenizer = AutoTokenizer.from_pretrained(MINICPM_MODEL_ID, **model_kwargs(token))
     model = AutoModelForCausalLM.from_pretrained(
         MINICPM_MODEL_ID,
@@ -76,7 +78,7 @@ def load_minicpm(token: str | None):
     if not text:
         raise RuntimeError("MiniCPM generated an empty response.")
 
-    print(f"MiniCPM output: {text}")
+    LOGGER.info("MiniCPM output: %s", text)
     return tokenizer, model
 
 
@@ -89,7 +91,7 @@ def load_cohere(token: str | None):
     from transformers import AutoProcessor, CohereAsrForConditionalGeneration
     from transformers.audio_utils import load_audio
 
-    print(f"Loading {COHERE_MODEL_ID}")
+    LOGGER.info("Loading %s", COHERE_MODEL_ID)
     processor = AutoProcessor.from_pretrained(COHERE_MODEL_ID, token=token)
     model = CohereAsrForConditionalGeneration.from_pretrained(
         COHERE_MODEL_ID,
@@ -131,7 +133,7 @@ def load_cohere(token: str | None):
     if not text:
         raise RuntimeError("Cohere Transcribe returned an empty transcript.")
 
-    print(f"Cohere transcript: {text}")
+    LOGGER.info("Cohere transcript: %s", text)
     return processor, model
 
 
@@ -152,16 +154,27 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip loading and transcribing with Cohere Transcribe.",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Only show warnings and errors.",
+    )
     return parser.parse_args()
+
+
+def configure_logging(quiet: bool) -> None:
+    level = logging.WARNING if quiet else logging.INFO
+    logging.basicConfig(level=level, format="%(message)s")
 
 
 def main() -> None:
     args = parse_args()
+    configure_logging(args.quiet)
     token = get_hugging_face_token()
 
     check_imports()
     if args.imports_only:
-        print("Imports-only check complete.")
+        LOGGER.info("Imports-only check complete.")
         return
 
     cohere_stack = None
@@ -172,9 +185,9 @@ def main() -> None:
         minicpm_stack = load_minicpm(token)
 
     if cohere_stack and minicpm_stack:
-        print("Both Phase 4 models loaded and generated/transcribed in one Python process.")
+        LOGGER.info("Both Phase 4 models loaded and generated/transcribed in one Python process.")
     else:
-        print("Selected Phase 4 model checks completed.")
+        LOGGER.info("Selected Phase 4 model checks completed.")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,14 @@ Run the app locally:
 uv run python app.py
 ```
 
+Validate that the transcription and review models can share one dependency/runtime environment:
+
+```bash
+uv run python scripts/prove_phase4_models.py
+```
+
+Use `--imports-only`, `--skip-cohere`, or `--skip-minicpm` to narrow the check while debugging. The Cohere transcription check requires `HF_TOKEN` or `HUGGINGFACEHUB_API_TOKEN` because the model is gated.
+
 Export Space-compatible dependencies:
 
 ```bash

@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
+
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 
 MODEL_ID = "openbmb/MiniCPM5-1B"
 MAX_REVIEW_TOKENS = 360
+PROMPTS_DIR = Path(__file__).with_name("prompts")
 
 
 def _get_hugging_face_token() -> str | None:
@@ -21,6 +25,21 @@ def _model_kwargs() -> dict[str, str]:
     if token:
         return {"token": token}
     return {}
+
+
+@lru_cache(maxsize=1)
+def _prompt_environment() -> Environment:
+    return Environment(
+        loader=FileSystemLoader(PROMPTS_DIR),
+        undefined=StrictUndefined,
+        autoescape=False,
+        keep_trailing_newline=True,
+    )
+
+
+def _render_prompt(template_name: str, **context: str) -> str:
+    template = _prompt_environment().get_template(template_name)
+    return template.render(**context).strip()
 
 
 @lru_cache(maxsize=1)
@@ -47,22 +66,11 @@ def _build_messages(transcript: str) -> list[dict[str, str]]:
     return [
         {
             "role": "system",
-            "content": (
-                "You are a supportive best man speech rehearsal coach. Give practical, specific feedback. "
-                "Do not rewrite the whole speech. Preserve the speaker's voice and personal stories."
-            ),
+            "content": _render_prompt("review_system_prompt.jinja2"),
         },
         {
             "role": "user",
-            "content": (
-                "Review this rehearsal transcript for a best man speech.\n\n"
-                "Return four short sections:\n"
-                "Overall impression\n"
-                "What is working\n"
-                "What to improve\n"
-                "Next rehearsal checklist\n\n"
-                f"Transcript:\n{transcript}"
-            ),
+            "content": _render_prompt("review_user_prompt.jinja2", transcript=transcript),
         },
     ]
 
