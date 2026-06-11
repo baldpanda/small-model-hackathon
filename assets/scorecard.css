@@ -112,12 +112,12 @@
 
 .scorecard-card h2,
 .scorecard-card h3 {
-  color: var(--ink);
+  color: var(--ink) !important;
   margin-top: 0;
 }
 
 .scorecard-card p {
-  color: var(--muted-ink);
+  color: var(--muted-ink) !important;
 }
 
 #practice-grid {
@@ -172,6 +172,40 @@
   border-radius: 8px;
 }
 
+#speech-audio,
+#speech-audio .wrap,
+#speech-audio .input-container {
+  background: #fffbf2 !important;
+  border-color: var(--soft-line) !important;
+  color: var(--ink) !important;
+}
+
+#speech-audio button,
+#speech-audio select,
+#speech-audio input,
+#speech-audio label,
+#speech-audio span,
+#speech-audio svg {
+  color: var(--ink) !important;
+}
+
+#speech-audio button,
+#speech-audio select {
+  background: #f7edda !important;
+  border-color: rgba(36, 26, 21, 0.28) !important;
+}
+
+#speech-audio button:hover,
+#speech-audio select:hover {
+  background: #efe0c7 !important;
+}
+
+#speech-audio [aria-label*="Record"],
+#speech-audio button:has(.record) {
+  color: var(--burgundy) !important;
+  font-weight: 800 !important;
+}
+
 #wedding-app textarea,
 #wedding-app input,
 #wedding-app .input-container,
@@ -219,11 +253,16 @@
 }
 
 #status-output {
-  background: var(--paper-deep);
+  background: #efe3ce;
   border: 1px solid var(--soft-line);
   border-radius: 8px;
-  color: var(--ink);
+  color: var(--ink) !important;
   padding: 14px 16px;
+}
+
+#status-output,
+#status-output * {
+  color: var(--ink) !important;
 }
 
 #status-output p {
