@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import logging
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,6 +12,8 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 MODEL_ID = "openbmb/MiniCPM5-1B"
 MAX_REVIEW_TOKENS = 360
 PROMPTS_DIR = Path(__file__).with_name("prompts")
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _get_hugging_face_token() -> str | None:
@@ -44,6 +48,7 @@ def _render_prompt(template_name: str, **context: str) -> str:
 
 @lru_cache(maxsize=1)
 def _load_review_stack() -> tuple[object, object, object]:
+    load_started_at = time.perf_counter()
     try:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -56,10 +61,34 @@ def _load_review_stack() -> tuple[object, object, object]:
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype="auto",
-        device_map="auto",
         **_model_kwargs(),
     )
+    runtime_device = _place_model_for_runtime(torch, model)
+    model.eval()
+    LOGGER.info(
+        "Loaded review stack on %s in %.1fs",
+        runtime_device,
+        time.perf_counter() - load_started_at,
+    )
     return torch, tokenizer, model
+
+
+def _place_model_for_runtime(torch: object, model: object) -> str:
+    if torch.cuda.is_available():
+        model.to("cuda")
+        return "cuda"
+
+    try:
+        model.to("cuda")
+    except (AssertionError, RuntimeError) as exc:
+        LOGGER.info("CUDA startup placement unavailable; using CPU: %s", exc)
+        model.to("cpu")
+        return "cpu"
+
+    return "cuda"
+
+
+_REVIEW_STACK = _load_review_stack()
 
 
 def _build_messages(transcript: str) -> list[dict[str, str]]:
@@ -100,7 +129,7 @@ def review_speech(transcript: str) -> str:
     if not text:
         raise ValueError("The transcript is empty, so there is nothing to review.")
 
-    torch, tokenizer, model = _load_review_stack()
+    torch, tokenizer, model = _REVIEW_STACK
     inputs = _apply_chat_template(tokenizer, _build_messages(text)).to(model.device)
 
     generate_kwargs = {

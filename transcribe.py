@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import logging
+import time
 from functools import lru_cache
 
 import soundfile as sf
@@ -8,6 +10,8 @@ import soundfile as sf
 MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
 MAX_RECORDING_SECONDS = 60
 MODEL_SAMPLE_RATE = 16000
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _get_hugging_face_token() -> str | None:
@@ -20,6 +24,7 @@ def _get_hugging_face_token() -> str | None:
 
 @lru_cache(maxsize=1)
 def _load_transcription_stack() -> tuple[object, object, object]:
+    load_started_at = time.perf_counter()
     try:
         import torch
         from transformers import AutoProcessor, CohereAsrForConditionalGeneration
@@ -38,9 +43,33 @@ def _load_transcription_stack() -> tuple[object, object, object]:
     model = CohereAsrForConditionalGeneration.from_pretrained(
         MODEL_ID,
         token=token,
-        device_map="auto",
+    )
+    runtime_device = _place_model_for_runtime(torch, model)
+    model.eval()
+    LOGGER.info(
+        "Loaded transcription stack on %s in %.1fs",
+        runtime_device,
+        time.perf_counter() - load_started_at,
     )
     return torch, processor, model
+
+
+def _place_model_for_runtime(torch: object, model: object) -> str:
+    if torch.cuda.is_available():
+        model.to("cuda")
+        return "cuda"
+
+    try:
+        model.to("cuda")
+    except (AssertionError, RuntimeError) as exc:
+        LOGGER.info("CUDA startup placement unavailable; using CPU: %s", exc)
+        model.to("cpu")
+        return "cpu"
+
+    return "cuda"
+
+
+_TRANSCRIPTION_STACK = _load_transcription_stack()
 
 
 def _validate_duration(audio_path: str) -> float:
@@ -59,7 +88,7 @@ def _validate_duration(audio_path: str) -> float:
 
 def transcribe_recording(audio_path: str, language: str = "en") -> str:
     _validate_duration(audio_path)
-    torch, processor, model = _load_transcription_stack()
+    torch, processor, model = _TRANSCRIPTION_STACK
     try:
         from transformers.audio_utils import load_audio
     except ImportError as exc:

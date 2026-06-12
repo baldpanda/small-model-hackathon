@@ -1,15 +1,24 @@
+import logging
+import math
+import time
 from pathlib import Path
 
 import gradio as gr
 import spaces
 
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
+
 from filler_words import summarize_fillers
 from review import review_speech
-from timing import summarize_timing
+from timing import get_audio_duration_seconds, summarize_timing
 from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
 
 
 APP_DIR = Path(__file__).parent
+MIN_GPU_DURATION_SECONDS = 30
+MAX_GPU_DURATION_SECONDS = 75
+GPU_DURATION_OVERHEAD_SECONDS = 15
 
 COUNTDOWN_HEAD = f"""
 <script>
@@ -111,56 +120,140 @@ SPEECH_FEEDBACK_SECTIONS = (
 )
 
 
-@spaces.GPU(duration=120)
-def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
+class ProcessingTimer:
+    def __init__(self) -> None:
+        self.started_at = time.perf_counter()
+        self.steps: list[tuple[str, float]] = []
+
+    def add_step(self, label: str, seconds: float) -> None:
+        self.steps.append((label, seconds))
+
+    def total_seconds(self) -> float:
+        return time.perf_counter() - self.started_at
+
+    def format_markdown(self) -> str:
+        lines = ["", "**Processing timings**"]
+        for label, seconds in self.steps:
+            lines.append(f"- {label}: {seconds:.1f}s")
+        lines.append(f"- total: {self.total_seconds():.1f}s")
+        return "\n".join(lines)
+
+    def log(self, status: str) -> None:
+        parts = [f"{label}={seconds:.1f}s" for label, seconds in self.steps]
+        parts.append(f"total={self.total_seconds():.1f}s")
+        LOGGER.info("process_rehearsal status=%s timings=%s", status, " ".join(parts))
+
+
+def _gpu_duration_seconds(audio_path: str | None) -> int:
     if not audio_path:
-        return "", "", "", "", "Record a speech first. The app accepts up to 60 seconds."
+        return 5
 
     try:
-        transcript = transcribe_recording(audio_path)
-    except ValueError as exc:
-        return "", "", "", "", str(exc)
-    except RuntimeError as exc:
-        return "", "", "", "", str(exc)
-    except Exception as exc:
-        return "", "", "", "", f"Transcription failed: {exc}"
+        duration_seconds = get_audio_duration_seconds(audio_path)
+    except Exception:
+        return MIN_GPU_DURATION_SECONDS
 
-    timing_feedback = _build_timing_feedback(audio_path, transcript)
-    filler_feedback = _build_filler_feedback(transcript)
+    estimated_seconds = math.ceil(duration_seconds + GPU_DURATION_OVERHEAD_SECONDS)
+    return min(MAX_GPU_DURATION_SECONDS, max(MIN_GPU_DURATION_SECONDS, estimated_seconds))
 
+
+def _timed_step(timer: ProcessingTimer, label: str, action):
+    step_started_at = time.perf_counter()
     try:
-        feedback = review_speech(transcript)
-    except ValueError as exc:
-        return (
-            transcript,
-            _format_speech_feedback_markdown(str(exc)),
-            _format_metric_markdown(timing_feedback),
-            _format_metric_markdown(filler_feedback),
-            "Transcription complete. Review failed.",
-        )
-    except RuntimeError as exc:
-        return (
-            transcript,
-            _format_speech_feedback_markdown(str(exc)),
-            _format_metric_markdown(timing_feedback),
-            _format_metric_markdown(filler_feedback),
-            "Transcription complete. Review failed.",
-        )
-    except Exception as exc:
-        return (
-            transcript,
-            _format_speech_feedback_markdown(f"Review failed: {exc}"),
-            _format_metric_markdown(timing_feedback),
-            _format_metric_markdown(filler_feedback),
-            "Transcription complete. Review failed.",
-        )
+        return action()
+    finally:
+        timer.add_step(label, time.perf_counter() - step_started_at)
+
+
+def _status_with_timings(message: str, timer: ProcessingTimer) -> str:
+    timer.log(message.splitlines()[0])
+    return f"{message}{timer.format_markdown()}"
+
+
+def _format_success_outputs(
+    transcript: str,
+    feedback: str,
+    timing_feedback: str,
+    filler_feedback: str,
+    status: str,
+    timer: ProcessingTimer,
+) -> tuple[str, str, str, str, str]:
+    step_started_at = time.perf_counter()
+    formatted_feedback = _format_speech_feedback_markdown(feedback)
+    formatted_timing = _format_metric_markdown(timing_feedback)
+    formatted_filler = _format_metric_markdown(filler_feedback)
+    timer.add_step("formatting", time.perf_counter() - step_started_at)
 
     return (
         transcript,
-        _format_speech_feedback_markdown(feedback),
-        _format_metric_markdown(timing_feedback),
-        _format_metric_markdown(filler_feedback),
+        formatted_feedback,
+        formatted_timing,
+        formatted_filler,
+        _status_with_timings(status, timer),
+    )
+
+
+@spaces.GPU(duration=_gpu_duration_seconds)
+def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
+    timer = ProcessingTimer()
+    if not audio_path:
+        return (
+            "",
+            "",
+            "",
+            "",
+            _status_with_timings("Record a speech first. The app accepts up to 60 seconds.", timer),
+        )
+
+    try:
+        transcript = _timed_step(timer, "transcription", lambda: transcribe_recording(audio_path))
+    except ValueError as exc:
+        return "", "", "", "", _status_with_timings(str(exc), timer)
+    except RuntimeError as exc:
+        return "", "", "", "", _status_with_timings(str(exc), timer)
+    except Exception as exc:
+        return "", "", "", "", _status_with_timings(f"Transcription failed: {exc}", timer)
+
+    timing_feedback = _timed_step(timer, "timing analysis", lambda: _build_timing_feedback(audio_path, transcript))
+    filler_feedback = _timed_step(timer, "filler analysis", lambda: _build_filler_feedback(transcript))
+
+    try:
+        feedback = _timed_step(timer, "review generation", lambda: review_speech(transcript))
+    except ValueError as exc:
+        return _format_success_outputs(
+            transcript,
+            str(exc),
+            timing_feedback,
+            filler_feedback,
+            "Transcription complete. Review failed.",
+            timer,
+        )
+    except RuntimeError as exc:
+        return _format_success_outputs(
+            transcript,
+            str(exc),
+            timing_feedback,
+            filler_feedback,
+            "Transcription complete. Review failed.",
+            timer,
+        )
+    except Exception as exc:
+        return _format_success_outputs(
+            transcript,
+            f"Review failed: {exc}",
+            timing_feedback,
+            filler_feedback,
+            "Transcription complete. Review failed.",
+            timer,
+        )
+
+    return _format_success_outputs(
+        transcript,
+        feedback,
+        timing_feedback,
+        filler_feedback,
         "Transcription, review, timing, and filler analysis complete.",
+        timer,
     )
 
 

@@ -30,6 +30,8 @@ Run the app locally:
 uv run python app.py
 ```
 
+The app loads both model stacks at startup for ZeroGPU efficiency, so local app startup requires access to the gated transcription model through `HF_TOKEN` or `HUGGINGFACEHUB_API_TOKEN`.
+
 Validate that the transcription and review models can share one dependency/runtime environment:
 
 ```bash
