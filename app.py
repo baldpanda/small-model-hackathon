@@ -1,6 +1,7 @@
 import logging
 import math
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import gradio as gr
@@ -16,9 +17,12 @@ from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
 
 
 APP_DIR = Path(__file__).parent
-MIN_GPU_DURATION_SECONDS = 30
-MAX_GPU_DURATION_SECONDS = 75
-GPU_DURATION_OVERHEAD_SECONDS = 15
+MIN_GPU_DURATION_SECONDS = 15
+MAX_GPU_DURATION_SECONDS = 45
+GPU_DURATION_OVERHEAD_SECONDS = 8
+SPEECH_FEEDBACK_PENDING = "_Speech feedback will appear after the model review finishes._"
+TIMING_FEEDBACK_PENDING = "_Timing feedback will appear after transcription._"
+FILLER_FEEDBACK_PENDING = "_Filler feedback will appear after transcription._"
 
 COUNTDOWN_HEAD = f"""
 <script>
@@ -165,12 +169,32 @@ def _timed_step(timer: ProcessingTimer, label: str, action):
         timer.add_step(label, time.perf_counter() - step_started_at)
 
 
-def _status_with_timings(message: str, timer: ProcessingTimer) -> str:
-    timer.log(message.splitlines()[0])
+def _status_with_timings(message: str, timer: ProcessingTimer, *, log: bool = True) -> str:
+    if log:
+        timer.log(message.splitlines()[0])
     return f"{message}{timer.format_markdown()}"
 
 
-def _format_success_outputs(
+def _outputs(
+    transcript: str,
+    feedback: str,
+    timing_feedback: str,
+    filler_feedback: str,
+    status: str,
+    timer: ProcessingTimer,
+    *,
+    log_status: bool = False,
+) -> tuple[str, str, str, str, str]:
+    return (
+        transcript,
+        feedback,
+        timing_feedback,
+        filler_feedback,
+        _status_with_timings(status, timer, log=log_status),
+    )
+
+
+def _format_final_outputs(
     transcript: str,
     feedback: str,
     timing_feedback: str,
@@ -193,34 +217,114 @@ def _format_success_outputs(
     )
 
 
+def _format_duration_preview(duration_seconds: float) -> str:
+    return _format_metric_markdown(
+        "\n".join(
+            (
+                f"Duration: {duration_seconds:.1f} seconds",
+                "Estimated words: pending until transcription completes",
+                "Estimated pace: pending until transcription completes",
+            )
+        )
+    )
+
+
 @spaces.GPU(duration=_gpu_duration_seconds)
-def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
+def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
     timer = ProcessingTimer()
     if not audio_path:
-        return (
+        yield (
             "",
             "",
             "",
             "",
             _status_with_timings("Record a speech first. The app accepts up to 60 seconds.", timer),
         )
+        return
+
+    timing_preview = TIMING_FEEDBACK_PENDING
+    try:
+        duration_seconds = get_audio_duration_seconds(audio_path)
+    except Exception:
+        yield _outputs(
+            "",
+            SPEECH_FEEDBACK_PENDING,
+            timing_preview,
+            FILLER_FEEDBACK_PENDING,
+            "Recording received. Reading duration failed, so transcription is starting without a duration preview.",
+            timer,
+        )
+    else:
+        if duration_seconds > MAX_RECORDING_SECONDS:
+            yield (
+                "",
+                "",
+                "",
+                "",
+                _status_with_timings(
+                    "The recording is longer than 60 seconds. Please keep the speech to one minute for now.",
+                    timer,
+                ),
+            )
+            return
+
+        timing_preview = _format_duration_preview(duration_seconds)
+        yield _outputs(
+            "",
+            SPEECH_FEEDBACK_PENDING,
+            timing_preview,
+            FILLER_FEEDBACK_PENDING,
+            f"Recording received. Duration: {duration_seconds:.1f}s. Starting transcription.",
+            timer,
+        )
 
     try:
         transcript = _timed_step(timer, "transcription", lambda: transcribe_recording(audio_path))
     except ValueError as exc:
-        return "", "", "", "", _status_with_timings(str(exc), timer)
+        yield "", "", timing_preview, "", _status_with_timings(str(exc), timer)
+        return
     except RuntimeError as exc:
-        return "", "", "", "", _status_with_timings(str(exc), timer)
+        yield "", "", timing_preview, "", _status_with_timings(str(exc), timer)
+        return
     except Exception as exc:
-        return "", "", "", "", _status_with_timings(f"Transcription failed: {exc}", timer)
+        yield "", "", timing_preview, "", _status_with_timings(f"Transcription failed: {exc}", timer)
+        return
 
+    yield _outputs(
+        transcript,
+        SPEECH_FEEDBACK_PENDING,
+        timing_preview,
+        FILLER_FEEDBACK_PENDING,
+        "Transcript ready. Calculating timing feedback.",
+        timer,
+    )
     timing_feedback = _timed_step(timer, "timing analysis", lambda: _build_timing_feedback(audio_path, transcript))
+    formatted_timing_feedback = _format_metric_markdown(timing_feedback)
+
+    yield _outputs(
+        transcript,
+        SPEECH_FEEDBACK_PENDING,
+        formatted_timing_feedback,
+        FILLER_FEEDBACK_PENDING,
+        "Timing feedback ready. Counting filler words.",
+        timer,
+    )
     filler_feedback = _timed_step(timer, "filler analysis", lambda: _build_filler_feedback(transcript))
+    formatted_filler_feedback = _format_metric_markdown(filler_feedback)
+
+    yield _outputs(
+        transcript,
+        SPEECH_FEEDBACK_PENDING,
+        formatted_timing_feedback,
+        formatted_filler_feedback,
+        "Filler feedback ready. Generating speech feedback.",
+        timer,
+    )
 
     try:
         feedback = _timed_step(timer, "review generation", lambda: review_speech(transcript))
     except ValueError as exc:
-        return _format_success_outputs(
+        yield _format_final_outputs(
             transcript,
             str(exc),
             timing_feedback,
@@ -228,8 +332,9 @@ def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
             "Transcription complete. Review failed.",
             timer,
         )
+        return
     except RuntimeError as exc:
-        return _format_success_outputs(
+        yield _format_final_outputs(
             transcript,
             str(exc),
             timing_feedback,
@@ -237,8 +342,9 @@ def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
             "Transcription complete. Review failed.",
             timer,
         )
+        return
     except Exception as exc:
-        return _format_success_outputs(
+        yield _format_final_outputs(
             transcript,
             f"Review failed: {exc}",
             timing_feedback,
@@ -246,8 +352,9 @@ def process_rehearsal(audio_path: str | None) -> tuple[str, str, str, str, str]:
             "Transcription complete. Review failed.",
             timer,
         )
+        return
 
-    return _format_success_outputs(
+    yield _format_final_outputs(
         transcript,
         feedback,
         timing_feedback,
@@ -386,6 +493,9 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             inputs=audio_input,
             outputs=[transcript_output, feedback_output, timing_output, filler_output, status_output],
         )
+
+
+demo.queue()
 
 
 if __name__ == "__main__":
