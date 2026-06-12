@@ -465,14 +465,6 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     elem_id="transcript-output",
                 )
 
-            with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
-                gr.Markdown("## Speech Feedback")
-                feedback_output = gr.Markdown(
-                    value="_Speech feedback will appear here after transcription._",
-                    elem_classes=["score-output"],
-                )
-
-        with gr.Row():
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
                 gr.Markdown("## Timing Feedback")
                 timing_output = gr.Markdown(
@@ -481,10 +473,18 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     elem_classes=["score-output"],
                 )
 
+        with gr.Row():
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
                 gr.Markdown("## Filler Feedback")
                 filler_output = gr.Markdown(
                     value="_Filler feedback will appear here after transcription._",
+                    elem_classes=["score-output"],
+                )
+
+            with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
+                gr.Markdown("## Speech Feedback")
+                feedback_output = gr.Markdown(
+                    value="_Speech feedback will appear here after transcription._",
                     elem_classes=["score-output"],
                 )
 
