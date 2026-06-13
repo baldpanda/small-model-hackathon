@@ -7,9 +7,11 @@ from functools import lru_cache
 
 import soundfile as sf
 
+from rehearsal_limits import validate_recording_duration_seconds
+
 MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
-MAX_RECORDING_SECONDS = 60
 MODEL_SAMPLE_RATE = 16000
+MAX_TRANSCRIPTION_TOKENS = 512
 
 LOGGER = logging.getLogger(__name__)
 
@@ -72,22 +74,20 @@ def _place_model_for_runtime(torch: object, model: object) -> str:
 _TRANSCRIPTION_STACK = _load_transcription_stack()
 
 
-def _validate_duration(audio_path: str) -> float:
-    try:
-        info = sf.info(audio_path)
-    except RuntimeError as exc:
-        raise ValueError(f"Could not read the recording: {exc}") from exc
+def _validate_duration(audio_path: str, duration_seconds: float | None = None) -> float:
+    if duration_seconds is None:
+        try:
+            info = sf.info(audio_path)
+        except RuntimeError as exc:
+            raise ValueError(f"Could not read the recording: {exc}") from exc
+        duration_seconds = float(info.duration)
 
-    duration_seconds = float(info.duration)
-    if duration_seconds <= 0:
-        raise ValueError("The recording appears to be empty. Try recording the speech again.")
-    if duration_seconds > MAX_RECORDING_SECONDS:
-        raise ValueError("The recording is longer than 60 seconds. Please keep the speech to one minute for now.")
+    validate_recording_duration_seconds(duration_seconds)
     return duration_seconds
 
 
-def transcribe_recording(audio_path: str, language: str = "en") -> str:
-    _validate_duration(audio_path)
+def transcribe_recording(audio_path: str, language: str = "en", duration_seconds: float | None = None) -> str:
+    _validate_duration(audio_path, duration_seconds)
     torch, processor, model = _TRANSCRIPTION_STACK
     try:
         from transformers.audio_utils import load_audio
@@ -109,7 +109,7 @@ def transcribe_recording(audio_path: str, language: str = "en") -> str:
     inputs.pop("length", None)
 
     with torch.inference_mode():
-        outputs = model.generate(**inputs, max_new_tokens=256)
+        outputs = model.generate(**inputs, max_new_tokens=MAX_TRANSCRIPTION_TOKENS)
 
     if audio_chunk_index is None:
         transcript = processor.decode(outputs, skip_special_tokens=True)
