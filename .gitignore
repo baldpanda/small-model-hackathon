@@ -8,6 +8,7 @@ traces/
 data/private/
 data/generated/
 eval/private/
+evals/private/
 runs/
 modal-artifacts/
 adapters/

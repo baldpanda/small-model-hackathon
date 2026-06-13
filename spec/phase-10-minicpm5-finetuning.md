@@ -17,6 +17,7 @@ The next product risk is quality rather than feature coverage. The current promp
 This phase de-risks:
 
 - a clear rubric for speech-feedback quality
+- a concrete scorecard output contract for evaluation and training
 - repeatable evaluation against the current `review_speech` path
 - prompt optimization before training
 - private dataset creation for speech coaching
@@ -33,6 +34,8 @@ As someone rehearsing a speech, I want the app's feedback to be consistently spe
 Phase 10 includes:
 
 - defining a rubric for speech-feedback quality
+- using `evals/speech-feedback-coaching-rubric.md` as the rubric source of truth
+- using transcript plus deterministic stats as the fine-tuning and evaluation input
 - hand-writing private held-out evaluation transcripts
 - running the existing `review_speech(transcript: str) -> str` path as the baseline
 - evaluating with `openbmb/MiniCPM5-1B` and thinking mode off
@@ -69,32 +72,17 @@ Required inference behavior:
 - pass `enable_thinking=False` for baseline inference, optimized-prompt evaluation, adapter evaluation, and any future app-facing inference from this phase
 - keep output concise and user-facing
 - do not expose reasoning traces
-- preserve the current four-section feedback shape unless evaluation shows a better shape is needed
+- train and evaluate against the compact scorecard output contract in `evals/speech-feedback-coaching-rubric.md`
 
 Thinking mode should stay off because this workflow needs direct coaching output, not visible reasoning. The fine-tuned adapter should learn the final feedback style, not chain-of-thought or hidden deliberation.
 
 ## Feedback Rubric
 
-The rubric should score each response on a small, repeatable scale. A 1-5 score per dimension is enough for this phase.
+The rubric source of truth is `evals/speech-feedback-coaching-rubric.md`.
 
-Rubric dimensions:
+The rubric uses 0/1/2 scoring across dimensions for context tailoring, content specificity, structural insight, voice and humor preservation, emotional or occasion turn, delivery and stats translation, proportionality, earned opening strength, actionable next step, and no invented details.
 
-- Context inference: identifies the apparent speech context without assuming every transcript is a wedding speech.
-- Transcript grounding: uses specific evidence from the transcript.
-- Structure advice: notices the speech shape and gives useful structure guidance.
-- Voice preservation: protects personal stories, natural humour, and the speaker's own tone.
-- Proportionate feedback: handles short or functional speeches without overclaiming.
-- Actionability: gives one clear next rehearsal step.
-- Concision: stays focused and avoids bloated checklist advice.
-- Safety against invention: does not invent audience reactions, confidence, jokes, warmth, relationships, or delivery details that are not in the transcript.
-
-Hard failures:
-
-- rewrites the full speech by default
-- gives generic wedding advice for a non-wedding transcript
-- invents personal details, names, venues, or audience response
-- omits a concrete next step
-- returns reasoning traces or thinking-mode content
+The rubric also defines hard gates for material hallucination, reasoning traces, full-speech rewriting, generic wedding advice on non-wedding transcripts, too many fixes, missing next step, and ignoring relevant stats.
 
 ## Evaluation Workflow
 
@@ -112,13 +100,13 @@ The held-out set should include:
 
 Evaluation steps:
 
-1. Run held-out transcripts through the current `review_speech` path.
+1. Run held-out transcripts through the current `review_speech` path as the current app baseline.
 2. Score each output with the rubric and record failure modes.
 3. Optimize the existing prompt templates.
 4. Freeze the best prompt baseline.
 5. Run the same held-out transcripts through the optimized prompt baseline.
 6. Train the LoRA adapter.
-7. Run the same held-out transcripts through the adapter with `enable_thinking=False`.
+7. Run the same held-out transcript-plus-stats examples through the adapter with `enable_thinking=False`.
 8. Compare current baseline, optimized prompt baseline, and LoRA adapter outputs.
 
 The held-out evaluation transcripts must not be included in training data.
@@ -133,7 +121,8 @@ Target dataset:
 - JSONL format
 - each row has a stable example ID, category metadata, and `messages`
 - each `messages` value contains `system`, `user`, and `assistant` messages
-- the `system` and `user` messages should match the app's no-thinking speech-review behavior
+- the `user` message should include transcript plus deterministic stats
+- the `system` and `user` messages should match the no-thinking speech-review behavior described in the rubric
 - the `assistant` message should be the desired final feedback, not reasoning
 
 Recommended category mix:
@@ -211,7 +200,7 @@ Use sanitized examples only when a committed fixture is necessary for scripts or
 
 - The phase spec exists and clearly names `openbmb/MiniCPM5-1B` as the fine-tuning target.
 - The spec requires thinking mode off with `enable_thinking=False`.
-- The rubric is defined before training.
+- The rubric is defined before training in `evals/speech-feedback-coaching-rubric.md`.
 - A private held-out evaluation set is created before synthetic training examples.
 - The current `review_speech` path is measured as the baseline.
 - The prompt is optimized and frozen before LoRA training.
@@ -241,7 +230,7 @@ Use sanitized examples only when a committed fixture is necessary for scripts or
 
 - What is the smallest held-out evaluation set that is still useful for this hackathon timeline?
 - Should the adapter evaluation use only human rubric scores, or also a structured model-assisted judge after manual spot checks?
-- Should the generated training examples use the current four-section feedback shape exactly, or include a small number of acceptable variants?
+- Should generated training examples require four bullets exactly, or allow a small number of tight one-paragraph scorecards?
 - Which Modal GPU offers the best cost and latency tradeoff for a small MiniCPM5 LoRA run?
 
 ## Definition of Done
