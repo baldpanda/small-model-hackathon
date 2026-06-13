@@ -5,3 +5,9 @@ __pycache__/
 .DS_Store
 model_details/
 traces/
+data/private/
+data/generated/
+eval/private/
+runs/
+modal-artifacts/
+adapters/
