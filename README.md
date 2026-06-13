@@ -47,6 +47,37 @@ Export Space-compatible dependencies:
 ./export_space_requirements.sh
 ```
 
+## Trace Sanitization
+
+Codex trace files can contain prompts, command output, local paths, secrets, private code, and personal details. Keep raw traces under `traces/raw/` and write reviewed copies under `traces/sanitized/`; the whole `traces/` directory is ignored by git.
+
+The sanitizer is a best-effort helper, not a privacy guarantee. Always manually review the sanitized trace before uploading it to a public dataset or Space.
+
+Sanitize a copied Codex JSONL trace:
+
+```bash
+python3 scripts/sanitize_codex_trace.py \
+  traces/raw/rollout-example.jsonl \
+  -o traces/sanitized/rollout-example.sanitized.jsonl
+```
+
+By default, the sanitizer redacts common token formats and local paths, strips session base instructions, and drops Codex reasoning items. Add repeated `--redact-term` options for names, venue details, or other private phrases found during manual review:
+
+```bash
+python3 scripts/sanitize_codex_trace.py \
+  traces/raw/rollout-example.jsonl \
+  -o traces/sanitized/rollout-example.sanitized.jsonl \
+  --redact-term "private name" \
+  --redact-term "private venue"
+```
+
+Before publishing a sanitized trace, manually inspect it for private wedding details and rerun a secret/path check such as:
+
+```bash
+TRACE=traces/sanitized/rollout-example.sanitized.jsonl
+rg -n -i 'sk-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9_-]{20,}|github_pat_|gh[pousr]_|/Users/' "$TRACE"
+```
+
 ## Deployment
 
 The Gradio app is deployed to this Hugging Face Space:
