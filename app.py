@@ -1,5 +1,4 @@
 import logging
-import math
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,18 +10,27 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
 from filler_words import summarize_fillers
+from rehearsal_limits import (
+    MAX_RECORDING_SECONDS,
+    accepted_recording_window_label,
+    estimate_gpu_duration_seconds,
+    validate_recording_duration_seconds,
+)
 from review import review_speech
 from timing import get_audio_duration_seconds, summarize_timing
-from transcribe import MAX_RECORDING_SECONDS, transcribe_recording
+from transcribe import transcribe_recording
 
 
 APP_DIR = Path(__file__).parent
-MIN_GPU_DURATION_SECONDS = 15
-MAX_GPU_DURATION_SECONDS = 45
-GPU_DURATION_OVERHEAD_SECONDS = 8
+RECORDING_WINDOW_LABEL = accepted_recording_window_label()
 SPEECH_FEEDBACK_PENDING = "_Speech feedback will appear after the model review finishes._"
 TIMING_FEEDBACK_PENDING = "_Timing feedback will appear after transcription._"
 FILLER_FEEDBACK_PENDING = "_Filler feedback will appear after transcription._"
+
+
+def _format_clock_seconds(seconds: int) -> str:
+    minutes, remaining_seconds = divmod(seconds, 60)
+    return f"{minutes}:{remaining_seconds:02d}"
 
 COUNTDOWN_HEAD = f"""
 <script>
@@ -73,7 +81,7 @@ COUNTDOWN_HEAD = f"""
     timerId = window.setInterval(() => {{
       secondsLeft -= 1;
       if (secondsLeft <= 0) {{
-        stopTimer("Reached 1:00. Recording stopped. Transcribe when ready.");
+        stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Recording stopped. Review when ready.`);
         stopRecording();
         return;
       }}
@@ -99,7 +107,7 @@ COUNTDOWN_HEAD = f"""
         const label = (button.getAttribute("aria-label") || button.innerText || "").toLowerCase();
         if (label.includes("record") || label.includes("stop")) {{
           if (timerId) {{
-            stopTimer("Recording stopped. Transcribe when ready.");
+            stopTimer("Recording stopped. Review when ready.");
           }} else {{
             startTimer(button);
           }}
@@ -125,8 +133,9 @@ SPEECH_FEEDBACK_SECTIONS = (
 
 
 class ProcessingTimer:
-    def __init__(self) -> None:
+    def __init__(self, requested_gpu_seconds: int | None = None) -> None:
         self.started_at = time.perf_counter()
+        self.requested_gpu_seconds = requested_gpu_seconds
         self.steps: list[tuple[str, float]] = []
 
     def add_step(self, label: str, seconds: float) -> None:
@@ -137,6 +146,8 @@ class ProcessingTimer:
 
     def format_markdown(self) -> str:
         lines = ["", "**Processing timings**"]
+        if self.requested_gpu_seconds is not None:
+            lines.append(f"- requested GPU budget: {self.requested_gpu_seconds}s")
         for label, seconds in self.steps:
             lines.append(f"- {label}: {seconds:.1f}s")
         lines.append(f"- total: {self.total_seconds():.1f}s")
@@ -144,21 +155,14 @@ class ProcessingTimer:
 
     def log(self, status: str) -> None:
         parts = [f"{label}={seconds:.1f}s" for label, seconds in self.steps]
+        if self.requested_gpu_seconds is not None:
+            parts.append(f"requested_gpu_budget={self.requested_gpu_seconds}s")
         parts.append(f"total={self.total_seconds():.1f}s")
         LOGGER.info("process_rehearsal status=%s timings=%s", status, " ".join(parts))
 
 
-def _gpu_duration_seconds(audio_path: str | None) -> int:
-    if not audio_path:
-        return 5
-
-    try:
-        duration_seconds = get_audio_duration_seconds(audio_path)
-    except Exception:
-        return MIN_GPU_DURATION_SECONDS
-
-    estimated_seconds = math.ceil(duration_seconds + GPU_DURATION_OVERHEAD_SECONDS)
-    return min(MAX_GPU_DURATION_SECONDS, max(MIN_GPU_DURATION_SECONDS, estimated_seconds))
+def _gpu_duration_seconds(audio_path: str, duration_seconds: float, requested_gpu_seconds: int) -> int:
+    return requested_gpu_seconds
 
 
 def _timed_step(timer: ProcessingTimer, label: str, action):
@@ -230,56 +234,31 @@ def _format_duration_preview(duration_seconds: float) -> str:
 
 
 @spaces.GPU(duration=_gpu_duration_seconds)
-def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
-    timer = ProcessingTimer()
-    if not audio_path:
-        yield (
-            "",
-            "",
-            "",
-            "",
-            _status_with_timings("Record a speech first. The app accepts up to 60 seconds.", timer),
-        )
-        return
-
-    timing_preview = TIMING_FEEDBACK_PENDING
-    try:
-        duration_seconds = get_audio_duration_seconds(audio_path)
-    except Exception:
-        yield _outputs(
-            "",
-            SPEECH_FEEDBACK_PENDING,
-            timing_preview,
-            FILLER_FEEDBACK_PENDING,
-            "Recording received. Reading duration failed, so transcription is starting without a duration preview.",
-            timer,
-        )
-    else:
-        if duration_seconds > MAX_RECORDING_SECONDS:
-            yield (
-                "",
-                "",
-                "",
-                "",
-                _status_with_timings(
-                    "The recording is longer than 60 seconds. Please keep the speech to one minute for now.",
-                    timer,
-                ),
-            )
-            return
-
-        timing_preview = _format_duration_preview(duration_seconds)
-        yield _outputs(
-            "",
-            SPEECH_FEEDBACK_PENDING,
-            timing_preview,
-            FILLER_FEEDBACK_PENDING,
-            f"Recording received. Duration: {duration_seconds:.1f}s. Starting transcription.",
-            timer,
-        )
+def _process_valid_rehearsal(
+    audio_path: str,
+    duration_seconds: float,
+    requested_gpu_seconds: int,
+) -> Iterator[tuple[str, str, str, str, str]]:
+    timer = ProcessingTimer(requested_gpu_seconds=requested_gpu_seconds)
+    timing_preview = _format_duration_preview(duration_seconds)
+    yield _outputs(
+        "",
+        SPEECH_FEEDBACK_PENDING,
+        timing_preview,
+        FILLER_FEEDBACK_PENDING,
+        (
+            f"Recording received. Duration: {duration_seconds:.1f}s. "
+            f"Requested GPU budget: {requested_gpu_seconds}s. Starting transcription."
+        ),
+        timer,
+    )
 
     try:
-        transcript = _timed_step(timer, "transcription", lambda: transcribe_recording(audio_path))
+        transcript = _timed_step(
+            timer,
+            "transcription",
+            lambda: transcribe_recording(audio_path, duration_seconds=duration_seconds),
+        )
     except ValueError as exc:
         yield "", "", timing_preview, "", _status_with_timings(str(exc), timer)
         return
@@ -364,6 +343,29 @@ def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, s
     )
 
 
+def _clear_outputs(status: str) -> tuple[str, str, str, str, str]:
+    return "", "", "", "", status
+
+
+def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
+    if not audio_path:
+        yield _clear_outputs(f"Record a speech first. The app accepts recordings from {RECORDING_WINDOW_LABEL}.")
+        return
+
+    try:
+        duration_seconds = get_audio_duration_seconds(audio_path)
+        validate_recording_duration_seconds(duration_seconds)
+    except ValueError as exc:
+        yield _clear_outputs(str(exc))
+        return
+    except Exception as exc:
+        yield _clear_outputs(f"Could not read the recording duration, so no GPU work was requested: {exc}")
+        return
+
+    requested_gpu_seconds = estimate_gpu_duration_seconds(duration_seconds)
+    yield from _process_valid_rehearsal(audio_path, duration_seconds, requested_gpu_seconds)
+
+
 def _build_timing_feedback(audio_path: str, transcript: str) -> str:
     try:
         return summarize_timing(audio_path, transcript)
@@ -413,12 +415,12 @@ def _format_metric_markdown(summary: str) -> str:
 with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
     with gr.Column(elem_id="wedding-app"):
         gr.HTML(
-            """
+            f"""
             <section id="hero-panel">
               <div class="kicker">Build Small Hackathon rehearsal desk</div>
               <h1>Best Man Speech Coach</h1>
               <p>
-                Record a one-minute run-through and get a wedding-scorecard readout:
+                Record a two-minute run-through and get a wedding-scorecard readout:
                 transcript, structure notes, pacing, and filler habits before the next toast.
               </p>
               <div class="stamp">Off-brand Gradio edition</div>
@@ -430,7 +432,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             with gr.Column(scale=7, elem_classes=["scorecard-card"]):
                 gr.Markdown(
                     "## Rehearsal Booth\n"
-                    "Speak naturally. The recording cap keeps each pass short enough to retry."
+                    f"Speak naturally. The app accepts recordings from {RECORDING_WINDOW_LABEL}."
                 )
                 audio_input = gr.Audio(
                     sources=["microphone"],
@@ -439,7 +441,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     elem_id="speech-audio",
                 )
                 countdown = gr.HTML(
-                    f"<div id='recording-status'>Recording limit: 1:00</div>",
+                    f"<div id='recording-status'>Recording limit: {_format_clock_seconds(MAX_RECORDING_SECONDS)}</div>",
                     label="Recording timer",
                 )
                 transcribe_button = gr.Button(
