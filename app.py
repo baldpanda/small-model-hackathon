@@ -10,7 +10,11 @@ import spaces
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
-from filler_words import format_filler_chips_html, summarize_fillers
+from filler_words import (
+    format_filler_chips_html,
+    highlight_fillers_html,
+    summarize_fillers,
+)
 from rehearsal_limits import (
     MAX_RECORDING_SECONDS,
     accepted_recording_window_label,
@@ -274,7 +278,7 @@ def _outputs(
     log_status: bool = False,
 ) -> tuple[str, str, str, str, str]:
     return (
-        transcript,
+        highlight_fillers_html(transcript),
         feedback,
         timing_feedback,
         filler_feedback,
@@ -297,7 +301,7 @@ def _format_final_outputs(
     timer.add_step("formatting", time.perf_counter() - step_started_at)
 
     return (
-        transcript,
+        highlight_fillers_html(transcript),
         formatted_feedback,
         formatted_timing,
         formatted_filler,
@@ -570,10 +574,12 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
         with gr.Row(elem_id="results-grid"):
             with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
                 gr.Markdown("## What you said")
-                transcript_output = gr.Textbox(
-                    label="Rehearsal transcript",
-                    lines=14,
-                    placeholder="Your transcript will land here once we've heard the recording.",
+                transcript_output = gr.HTML(
+                    value=(
+                        '<div class="transcript-paper transcript-paper--empty">'
+                        "Your transcript will land here once we've heard the recording."
+                        "</div>"
+                    ),
                     elem_id="transcript-output",
                 )
 
