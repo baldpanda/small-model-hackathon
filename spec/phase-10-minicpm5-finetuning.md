@@ -75,6 +75,8 @@ Required inference behavior:
 - use the fixed four-line app-facing scorecard shape: `Strength`, `Fix 1`, `Fix 2`, `Next run`
 - use `Fix 1` for the highest-impact content or structure change
 - use `Fix 2` for the highest-impact delivery or stats-based change, or proportionate polish when stats are already controlled
+- require `Fix 2` to use pace or filler stats when those stats are outside the controlled range
+- handle Toastmasters roles as functional role briefings, not as wedding-style speeches or generic vocabulary examples
 - keep generation conservative for schema adherence (`temperature=0.1` in the current app path)
 - record scorecard-shape validity during evals, but do not spend a second GPU call on retry or repair generation
 
