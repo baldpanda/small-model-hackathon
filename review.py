@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 MODEL_ID = "openbmb/MiniCPM5-1B"
 ADAPTER_ID_ENV = "REVIEW_ADAPTER_ID"
+PROMPT_LOG_ENV = "REVIEW_LOG_PROMPT"
 PROMPT_VERSION = "stats_fixed_scorecard_v2"
 MAX_REVIEW_TOKENS = 260
 PROMPTS_DIR = Path(__file__).with_name("prompts")
@@ -41,6 +42,11 @@ def _model_kwargs() -> dict[str, str]:
 def _get_review_adapter_id() -> str | None:
     adapter_id = os.getenv(ADAPTER_ID_ENV, "").strip()
     return adapter_id or None
+
+
+def _should_log_review_prompt() -> bool:
+    value = os.getenv(PROMPT_LOG_ENV, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 @lru_cache(maxsize=1)
@@ -311,6 +317,53 @@ def _build_messages(transcript: str, stats: Mapping[str, Any] | None = None) -> 
     ]
 
 
+def _log_review_prompt(tokenizer: object, messages: list[dict[str, str]]) -> None:
+    if not _should_log_review_prompt():
+        return
+
+    LOGGER.warning(
+        "%s is enabled; logging populated review prompt including transcript and stats.\n%s",
+        PROMPT_LOG_ENV,
+        _render_chat_prompt_for_logging(tokenizer, messages),
+    )
+
+
+def _render_chat_prompt_for_logging(tokenizer: object, messages: list[dict[str, str]]) -> str:
+    try:
+        return str(
+            tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        )
+    except TypeError:
+        try:
+            return str(
+                tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - prompt logging should never break review generation.
+            LOGGER.warning("Failed to render chat template for prompt logging: %s", exc)
+            return _format_messages_for_logging(messages)
+    except Exception as exc:  # noqa: BLE001 - prompt logging should never break review generation.
+        LOGGER.warning("Failed to render chat template for prompt logging: %s", exc)
+        return _format_messages_for_logging(messages)
+
+
+def _format_messages_for_logging(messages: list[dict[str, str]]) -> str:
+    formatted = []
+    for message in messages:
+        role = str(message.get("role") or "unknown").upper()
+        content = str(message.get("content") or "")
+        formatted.append(f"{role}:\n{content}")
+    return "\n\n".join(formatted)
+
+
 def _apply_chat_template(tokenizer: object, messages: list[dict[str, str]]) -> object:
     try:
         return tokenizer.apply_chat_template(
@@ -337,7 +390,9 @@ def review_speech(transcript: str, stats: Mapping[str, Any] | None = None) -> st
         raise ValueError("The transcript is empty, so there is nothing to review.")
 
     torch, tokenizer, model = _load_review_stack()
-    inputs = _apply_chat_template(tokenizer, _build_messages(text, stats)).to(_model_device(model))
+    messages = _build_messages(text, stats)
+    _log_review_prompt(tokenizer, messages)
+    inputs = _apply_chat_template(tokenizer, messages).to(_model_device(model))
 
     generate_kwargs = {
         "max_new_tokens": MAX_REVIEW_TOKENS,

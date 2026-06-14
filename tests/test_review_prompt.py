@@ -6,9 +6,13 @@ from unittest.mock import patch
 from review import (
     MODEL_ID,
     _build_messages,
+    _format_messages_for_logging,
     _get_review_adapter_id,
+    _log_review_prompt,
     _model_device,
+    _render_chat_prompt_for_logging,
     _review_model_label,
+    _should_log_review_prompt,
     clean_review_output,
     format_review_stats,
     is_valid_scorecard_shape,
@@ -17,6 +21,19 @@ from review import (
 
 
 class ReviewPromptTests(unittest.TestCase):
+    def test_review_prompt_logging_is_opt_in(self) -> None:
+        truthy_values = ["1", "true", "yes", "on"]
+        for value in truthy_values:
+            with self.subTest(value=value):
+                with patch.dict("os.environ", {"REVIEW_LOG_PROMPT": value}, clear=True):
+                    self.assertTrue(_should_log_review_prompt())
+
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertFalse(_should_log_review_prompt())
+
+        with patch.dict("os.environ", {"REVIEW_LOG_PROMPT": "0"}, clear=True):
+            self.assertFalse(_should_log_review_prompt())
+
     def test_review_adapter_id_is_optional(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             self.assertIsNone(_get_review_adapter_id())
@@ -42,6 +59,65 @@ class ReviewPromptTests(unittest.TestCase):
                 yield FakeParameter()
 
         self.assertEqual(_model_device(FakeModel()), "cuda:0")
+
+    def test_render_chat_prompt_for_logging_uses_non_tokenized_chat_template(self) -> None:
+        class FakeTokenizer:
+            def __init__(self) -> None:
+                self.kwargs = {}
+
+            def apply_chat_template(self, messages, **kwargs):
+                self.kwargs = kwargs
+                return "rendered prompt"
+
+        tokenizer = FakeTokenizer()
+        rendered = _render_chat_prompt_for_logging(tokenizer, [{"role": "user", "content": "hello"}])
+
+        self.assertEqual(rendered, "rendered prompt")
+        self.assertFalse(tokenizer.kwargs["tokenize"])
+        self.assertTrue(tokenizer.kwargs["add_generation_prompt"])
+        self.assertFalse(tokenizer.kwargs["enable_thinking"])
+
+    def test_prompt_logging_falls_back_to_messages(self) -> None:
+        class BrokenTokenizer:
+            def apply_chat_template(self, messages, **kwargs):
+                raise RuntimeError("template failed")
+
+        messages = [{"role": "user", "content": "hello"}]
+
+        with self.assertLogs("review", level="WARNING") as logs:
+            rendered = _render_chat_prompt_for_logging(BrokenTokenizer(), messages)
+
+        self.assertEqual(rendered, "USER:\nhello")
+        self.assertIn("Failed to render chat template", "\n".join(logs.output))
+
+    def test_log_review_prompt_respects_env_flag(self) -> None:
+        class FakeTokenizer:
+            def apply_chat_template(self, messages, **kwargs):
+                return "rendered prompt"
+
+        messages = [{"role": "user", "content": "hello"}]
+
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertNoLogs("review", level="WARNING"):
+                _log_review_prompt(FakeTokenizer(), messages)
+
+        with patch.dict("os.environ", {"REVIEW_LOG_PROMPT": "1"}, clear=True):
+            with self.assertLogs("review", level="WARNING") as logs:
+                _log_review_prompt(FakeTokenizer(), messages)
+
+        self.assertIn("REVIEW_LOG_PROMPT is enabled", "\n".join(logs.output))
+        self.assertIn("rendered prompt", "\n".join(logs.output))
+
+    def test_format_messages_for_logging_uses_roles(self) -> None:
+        self.assertEqual(
+            _format_messages_for_logging(
+                [
+                    {"role": "system", "content": "coach"},
+                    {"role": "user", "content": "speech"},
+                ]
+            ),
+            "SYSTEM:\ncoach\n\nUSER:\nspeech",
+        )
 
     def test_format_review_stats_uses_compact_readable_lines(self) -> None:
         stats = {
