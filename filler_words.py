@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 
@@ -96,3 +97,24 @@ def format_filler_summary(analysis: FillerAnalysis) -> str:
 
 def summarize_fillers(transcript: str) -> str:
     return format_filler_summary(analyze_fillers(transcript))
+
+
+def format_filler_chips_html(transcript: str) -> str:
+    """Render the tracked-filler counts as cue-card chips."""
+    analysis = analyze_fillers(transcript)
+    notable = analysis.notable_counts
+    if not notable:
+        return '<div class="chip-empty">No notable filler words — nicely clean.</div>'
+
+    chips = []
+    for index, (filler, count) in enumerate(notable[:6]):
+        css_class = "chip chip--top" if index == 0 else "chip"
+        chips.append(f'<span class="{css_class}">{html.escape(filler)} &times;{count}</span>')
+
+    top_filler, top_count = notable[0]
+    if top_count == 1:
+        note = "No major repeated filler yet — keep rehearsing naturally."
+    else:
+        note = f"Swap repeated &lsquo;{html.escape(top_filler)}&rsquo; moments for a short pause."
+
+    return f'<div class="chip-row">{"".join(chips)}</div><p class="chip-note">{note}</p>'

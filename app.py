@@ -10,7 +10,7 @@ import spaces
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
-from filler_words import summarize_fillers
+from filler_words import format_filler_chips_html, summarize_fillers
 from rehearsal_limits import (
     MAX_RECORDING_SECONDS,
     accepted_recording_window_label,
@@ -27,7 +27,7 @@ APP_DIR = Path(__file__).parent
 RECORDING_WINDOW_LABEL = accepted_recording_window_label()
 SPEECH_FEEDBACK_PENDING = "_The honest review lands once the coach has heard you out._"
 TIMING_FEEDBACK_PENDING = "_Pacing notes land after the transcript._"
-FILLER_FEEDBACK_PENDING = "_Crutch-word count lands after the transcript._"
+FILLER_FEEDBACK_PENDING = '<div class="chip-empty">Crutch-word count lands after the transcript.</div>'
 COMPLETION_STATUS = "All done — go raise that glass."
 
 CONFETTI_COLORS = ("#bf8a3a", "#7a2636", "#183d34", "#fff9ec", "#efe3ce")
@@ -293,7 +293,7 @@ def _format_final_outputs(
     step_started_at = time.perf_counter()
     formatted_feedback = _format_speech_feedback_markdown(feedback)
     formatted_timing = _format_metric_markdown(timing_feedback)
-    formatted_filler = _format_metric_markdown(filler_feedback)
+    formatted_filler = format_filler_chips_html(transcript)
     timer.add_step("formatting", time.perf_counter() - step_started_at)
 
     return (
@@ -373,7 +373,7 @@ def _process_valid_rehearsal(
         timer,
     )
     filler_feedback = _timed_step(timer, "filler analysis", lambda: _build_filler_feedback(transcript))
-    formatted_filler_feedback = _format_metric_markdown(filler_feedback)
+    formatted_filler_feedback = format_filler_chips_html(transcript)
 
     yield _outputs(
         transcript,
@@ -588,8 +588,8 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
         with gr.Row():
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
                 gr.Markdown("## Crutch words")
-                filler_output = gr.Markdown(
-                    value="_Crutch-word count lands here after the recording._",
+                filler_output = gr.HTML(
+                    value='<div class="chip-empty">Crutch-word count lands here after the recording.</div>',
                     elem_classes=["score-output"],
                 )
 
