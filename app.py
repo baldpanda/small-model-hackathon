@@ -357,6 +357,10 @@ def _reset_rehearsal() -> tuple[None, str, str, str, str, str]:
     return (None, *_clear_outputs("Ready to record."))
 
 
+def _review_button_state(audio_path: str | None):
+    return gr.update(interactive=bool(audio_path))
+
+
 def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
     if not audio_path:
         yield _clear_outputs(f"Record a speech first. The app accepts recordings from {RECORDING_WINDOW_LABEL}.")
@@ -462,6 +466,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                         variant="primary",
                         elem_id="review-button",
                         scale=3,
+                        interactive=False,
                     )
                     try_again_button = gr.Button(
                         "Try again",
@@ -514,6 +519,18 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             fn=process_rehearsal,
             inputs=audio_input,
             outputs=[transcript_output, feedback_output, timing_output, filler_output, status_output],
+        )
+
+        audio_input.change(
+            fn=_review_button_state,
+            inputs=audio_input,
+            outputs=transcribe_button,
+        )
+
+        audio_input.start_recording(
+            fn=lambda: gr.update(interactive=False),
+            inputs=None,
+            outputs=transcribe_button,
         )
 
         try_again_button.click(
