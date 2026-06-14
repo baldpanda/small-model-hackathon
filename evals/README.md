@@ -62,7 +62,7 @@ python evals/generate_app_reviews_local.py \
 
 This imports `review.review_speech()` from the app code, so it uses the same model ID, prompt templates, generation settings, deterministic stats block, and `enable_thinking=False` behavior as the deployed app review path.
 
-The adaptive-shape prompt baseline is tagged as `stats_adaptive_scorecard_v3`. Substantive clips use the `Strength`/`Fix 1`/`Fix 2`/`Next run` scorecard. Clips under 50 words or under 20 seconds use the shorter `Strength`/`Fix`/`Next run` scorecard so the model does not force a second fix from thin material. The app path applies a narrow scorecard cleaner after generation and drops extra bullets if the model continues after the next-step line. Eval outputs include `scorecard_shape_valid` and `scorecard_shape_issues`; there is no retry or repair generation pass.
+The variable-fix prompt baseline is tagged as `stats_variable_fix_scorecard_v4`. The app-facing scorecard uses `Strength`, `Fix 1`, optional `Fix 2` and `Fix 3`, and `Next run`. The model should use one fix by default and add more only when each additional fix is clearly useful and distinct. Stats are included in the input but do not get a reserved slot. The app path uses a small repetition penalty, then applies a narrow scorecard cleaner that deduplicates repeated fixes, renumbers the remaining fixes, and drops extra bullets if the model continues after the next-step line. Eval outputs include `scorecard_shape_valid`, `scorecard_shape_issues`, `quote_faithfulness_valid`, and `quote_faithfulness_issues`; there is no retry or repair generation pass. Do not add `no_repeat_ngram_size=3` here: a held-out Modal run showed it corrupts fixed labels into invalid values such as `Fix 4`.
 
 ## Run App Baseline Reviews On Modal
 
@@ -112,6 +112,36 @@ python evals/validate_sft_dataset.py --input evals/private/sft_train_messages.js
 python evals/validate_sft_dataset.py --input evals/private/sft_val_messages.jsonl
 ```
 
+Before a real training run, also check that the held-out eval inputs and SFT inputs use the same core stats-block schema:
+
+```bash
+python evals/check_stats_schema_consistency.py \
+  --eval-input evals/data/eval_transcripts.csv \
+  --sft-input evals/private/sft_train_messages.jsonl \
+  --sft-input evals/private/sft_val_messages.jsonl
+```
+
+The SFT validator prints the assistant fix-count distribution. Do not start the full run until the gold data includes enough single-fix rows to teach restraint on short or already-strong speeches. You can enforce a minimum while iterating:
+
+```bash
+python evals/validate_sft_dataset.py \
+  --input evals/private/sft_train_messages.jsonl \
+  --min-single-fix-rows 20
+```
+
+Before the next real training run, fix assistant quotes and enable the quote-faithfulness gate:
+
+```bash
+python evals/validate_sft_dataset.py \
+  --input evals/private/sft_train_messages.jsonl \
+  --check-quote-faithfulness
+python evals/validate_sft_dataset.py \
+  --input evals/private/sft_val_messages.jsonl \
+  --check-quote-faithfulness
+```
+
+This fails when a gold response puts a paraphrase in double quotes. Use double quotes only for exact transcript spans; paraphrase without quotation marks.
+
 The current default split is 104 train rows, 26 validation rows, and an 8-row smoke sample drawn from train.
 
 ## Fine-Tune On Modal
@@ -138,24 +168,42 @@ modal run evals/modal_train_minicpm5_lora.py \
   --data-rel-path data/sft_smoke_messages.jsonl \
   --epochs 1 \
   --limit 8 \
-  --max-steps 2
+  --max-steps 2 \
+  --gradient-accumulation-steps 2
 ```
 
-If the smoke adapter is created successfully, run the full training job:
+If the smoke adapter is created successfully, run the full training job. With 104 training rows, this uses roughly 13 optimizer updates per epoch and about 52 total updates:
 
 ```bash
 modal run evals/modal_train_minicpm5_lora.py \
   --run-name full \
   --data-rel-path data/sft_train_messages.jsonl \
   --val-rel-path data/sft_val_messages.jsonl \
-  --epochs 2 \
-  --max-steps 0
+  --epochs 4 \
+  --max-steps 0 \
+  --gradient-accumulation-steps 2
 ```
+
+Each Modal training run writes these inspection artifacts under `runs/<run-name>/` in the Modal Volume:
+
+- `assistant_mask_check.json`, which confirms the loss mask covers assistant feedback tokens and not the transcript/stats prompt
+- `trainer_state.json`
+- `train_metrics.json`
+- `log_history.json`
+- `adapter_final/`
 
 Pull the final adapter locally for private evaluation:
 
 ```bash
 modal volume get speech-feedback-minicpm5-ft runs/full/adapter_final adapters/minicpm5-speech-feedback-lora --force
+```
+
+Pull training diagnostics when comparing runs:
+
+```bash
+modal volume get speech-feedback-minicpm5-ft runs/full/trainer_state.json evals/private/trainer_state_full.json --force
+modal volume get speech-feedback-minicpm5-ft runs/full/log_history.json evals/private/log_history_full.json --force
+modal volume get speech-feedback-minicpm5-ft runs/full/assistant_mask_check.json evals/private/assistant_mask_check_full.json --force
 ```
 
 ## Evaluate The Adapter
@@ -168,6 +216,8 @@ modal run evals/modal_adapter_reviews.py \
   --output-path evals/private/modal_adapter_reviews.jsonl \
   --adapter-rel-path runs/full/adapter_final
 ```
+
+Treat validation loss as a training sanity check, not the product metric. Select between candidate adapters by scoring the held-out reviews with `evals/speech-feedback-coaching-rubric.md`, including hard-gate rate, per-dimension deltas, invented-detail failures, stats-use failures, scorecard-shape failures, and repeated/non-distinct fixes.
 
 For a smoke inference check, use the smoke adapter and a small limit:
 

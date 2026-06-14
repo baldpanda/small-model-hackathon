@@ -68,8 +68,10 @@ def generate_adapter_reviews_remote(
     from review import (
         PROMPT_VERSION,
         _build_messages,
+        _review_generate_kwargs,
         clean_review_output,
         expected_scorecard_labels,
+        quote_faithfulness_issues,
         scorecard_shape_issues,
     )
 
@@ -102,14 +104,8 @@ def generate_adapter_reviews_remote(
             scorecard_labels = expected_scorecard_labels(transcript, record["stats"])
             messages = _build_messages(transcript, record["stats"])
             inputs = apply_chat_template(tokenizer, messages).to(model.device)
-            generate_kwargs = {
-                "max_new_tokens": max_new_tokens,
-                "temperature": 0.1,
-                "top_p": 0.9,
-                "do_sample": True,
-            }
-            if getattr(tokenizer, "eos_token_id", None) is not None:
-                generate_kwargs["pad_token_id"] = tokenizer.eos_token_id
+            generate_kwargs = _review_generate_kwargs(tokenizer)
+            generate_kwargs["max_new_tokens"] = max_new_tokens
             with torch.inference_mode():
                 outputs = model.generate(**inputs, **generate_kwargs)
             generated_ids = outputs[0][inputs["input_ids"].shape[-1] :]
@@ -122,6 +118,8 @@ def generate_adapter_reviews_remote(
                 expected_labels=scorecard_labels,
             )
             result["scorecard_shape_valid"] = not result["scorecard_shape_issues"]
+            result["quote_faithfulness_issues"] = quote_faithfulness_issues(result["review"], transcript)
+            result["quote_faithfulness_valid"] = not result["quote_faithfulness_issues"]
         except Exception as exc:  # noqa: BLE001 - eval rows should capture failures and continue.
             result["error_type"] = type(exc).__name__
             result["error"] = str(exc)

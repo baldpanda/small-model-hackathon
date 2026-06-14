@@ -10,13 +10,15 @@ from review import (
     _get_review_adapter_id,
     _log_review_prompt,
     _model_device,
+    _review_generate_kwargs,
     _render_chat_prompt_for_logging,
     _review_model_label,
     _should_log_review_prompt,
+    clean_unfaithful_review_quotes,
     clean_review_output,
-    expected_scorecard_labels,
     format_review_stats,
     is_valid_scorecard_shape,
+    quote_faithfulness_issues,
     scorecard_shape_issues,
 )
 
@@ -155,11 +157,12 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn("Stats:", messages[1]["content"])
         self.assertIn("- Word count: 80", messages[1]["content"])
         self.assertIn("Transcript:\nTo Ava and Sam.", messages[1]["content"])
-        self.assertIn("Output exactly 4 bullets", messages[0]["content"])
-        self.assertIn('"- Strength:", "- Fix 1:", "- Fix 2:", "- Next run:"', messages[0]["content"])
-        self.assertIn("Output exactly four hyphen bullets", messages[1]["content"])
+        self.assertIn("Output exactly 3-5 bullets", messages[0]["content"])
+        self.assertIn('"- Strength:", then "- Fix 1:"', messages[0]["content"])
+        self.assertIn("optional \"- Fix 2:\" and \"- Fix 3:\"", messages[0]["content"])
+        self.assertIn("Output exactly 3-5 hyphen bullets", messages[1]["content"])
 
-    def test_build_messages_uses_short_contract_for_tiny_clip(self) -> None:
+    def test_build_messages_prefers_one_fix_by_default(self) -> None:
         messages = _build_messages(
             "Into the back row, and what about Lewis Hamilton in that row?",
             {
@@ -171,12 +174,10 @@ class ReviewPromptTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(expected_scorecard_labels("short clip", {"word_count": 28}), ("Strength", "Fix", "Next run"))
-        self.assertIn("Output exactly 3 bullets", messages[0]["content"])
-        self.assertIn('"- Strength:", "- Fix:", "- Next run:"', messages[0]["content"])
-        self.assertIn("Do not output \"Fix 1:\" or \"Fix 2:\"", messages[0]["content"])
-        self.assertIn("Output exactly three hyphen bullets", messages[1]["content"])
-        self.assertIn("Use Fix for the single highest-impact change", messages[1]["content"])
+        self.assertIn("Use one fix by default", messages[0]["content"])
+        self.assertIn("Mention pace, duration, fillers, or other stats only when", messages[0]["content"])
+        self.assertIn("Use one fix by default", messages[1]["content"])
+        self.assertIn("Mention stats only when", messages[1]["content"])
 
     def test_build_messages_instructs_stats_and_functional_role_use(self) -> None:
         messages = _build_messages(
@@ -192,11 +193,39 @@ class ReviewPromptTests(unittest.TestCase):
 
         self.assertIn("Toastmasters role such as grammarian", messages[0]["content"])
         self.assertIn("A slow pace under 120 wpm is worth addressing", messages[0]["content"])
-        self.assertIn("Do not make both fixes about the same example", messages[0]["content"])
+        self.assertIn("Do not make multiple fixes about the same example", messages[0]["content"])
         self.assertIn("Do not repeat feedback in different words", messages[0]["content"])
-        self.assertIn("Use Fix 2 for delivery or stats", messages[1]["content"])
+        self.assertIn("Add more fixes only when they are distinct", messages[1]["content"])
         self.assertIn("Do not repeat feedback", messages[1]["content"])
         self.assertIn("- Pace: 97.4 wpm (slow (<120))", messages[1]["content"])
+
+    def test_build_messages_treats_very_fast_pace_as_high_impact(self) -> None:
+        messages = _build_messages(
+            "Good evening, fellow Toastmasters and guests.",
+            {
+                "word_count": 87,
+                "wpm": 200.9,
+                "wpm_band": "fast (>200)",
+                "filler_count": 0,
+                "filler_band": "low (0-1/min)",
+            },
+        )
+
+        self.assertIn("Fast pace above 200 wpm", messages[0]["content"])
+        self.assertIn("fast pace above 200 wpm", messages[1]["content"])
+        self.assertIn("- Pace: 200.9 wpm (fast (>200))", messages[1]["content"])
+        self.assertIn("Use double quotes only for exact spans from the transcript", messages[0]["content"])
+        self.assertIn("Only use double quotes for exact transcript spans", messages[1]["content"])
+
+    def test_review_generate_kwargs_include_repetition_guardrails(self) -> None:
+        class FakeTokenizer:
+            eos_token_id = 123
+
+        generate_kwargs = _review_generate_kwargs(FakeTokenizer())
+
+        self.assertEqual(generate_kwargs["repetition_penalty"], 1.2)
+        self.assertEqual(generate_kwargs["no_repeat_ngram_size"], 0)
+        self.assertEqual(generate_kwargs["pad_token_id"], 123)
 
     def test_clean_review_output_stops_after_first_next_run(self) -> None:
         cleaned = clean_review_output(
@@ -250,18 +279,65 @@ class ReviewPromptTests(unittest.TestCase):
         )
         self.assertTrue(is_valid_scorecard_shape(cleaned))
 
-    def test_clean_review_output_uses_one_fix_for_short_contract(self) -> None:
-        expected_labels = ("Strength", "Fix", "Next run")
+    def test_clean_review_output_dedupes_repeated_fixes(self) -> None:
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The lake image is specific.",
+                    "- Fix 1: The generic generosity line needs one concrete example.",
+                    "- Fix 2: The generic generosity line needs one concrete example.",
+                    "- Fix 3: Slow the 214 wpm pace so the joke has room.",
+                    "- Next run: Replace the generosity line and rehearse at 170 wpm.",
+                ]
+            )
+        )
+
+        self.assertEqual(
+            cleaned,
+            "\n".join(
+                [
+                    "- Strength: The lake image is specific.",
+                    "- Fix 1: The generic generosity line needs one concrete example.",
+                    "- Fix 2: Slow the 214 wpm pace so the joke has room.",
+                    "- Next run: Replace the generosity line and rehearse at 170 wpm.",
+                ]
+            ),
+        )
+        self.assertTrue(is_valid_scorecard_shape(cleaned))
+
+    def test_clean_review_output_drops_fix_that_repeats_strength(self) -> None:
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The compost image is vivid and specific.",
+                    "- Fix 1: The compost image is vivid and specific.",
+                    "- Fix 2: Add one sentence explaining why the garden matters.",
+                    "- Next run: Rehearse the compost beat once without adding examples.",
+                ]
+            )
+        )
+
+        self.assertEqual(
+            cleaned,
+            "\n".join(
+                [
+                    "- Strength: The compost image is vivid and specific.",
+                    "- Fix 1: Add one sentence explaining why the garden matters.",
+                    "- Next run: Rehearse the compost beat once without adding examples.",
+                ]
+            ),
+        )
+        self.assertTrue(is_valid_scorecard_shape(cleaned))
+
+    def test_clean_review_output_keeps_one_fix_when_model_outputs_one(self) -> None:
         cleaned = clean_review_output(
             "\n".join(
                 [
                     "- Strength: The topic is clear.",
                     "- Fix 1: Make the point specific.",
-                    "- Fix 2: Add another example.",
                     "- Next run: Record one complete sentence.",
                 ]
-            ),
-            expected_labels=expected_labels,
+            )
         )
 
         self.assertEqual(
@@ -269,15 +345,14 @@ class ReviewPromptTests(unittest.TestCase):
             "\n".join(
                 [
                     "- Strength: The topic is clear.",
-                    "- Fix: Make the point specific.",
+                    "- Fix 1: Make the point specific.",
                     "- Next run: Record one complete sentence.",
                 ]
             ),
         )
-        self.assertTrue(is_valid_scorecard_shape(cleaned, expected_labels=expected_labels))
+        self.assertTrue(is_valid_scorecard_shape(cleaned))
 
-    def test_clean_review_output_strips_thinking_and_normalizes_plain_short_labels(self) -> None:
-        expected_labels = ("Strength", "Fix", "Next run")
+    def test_clean_review_output_strips_thinking_and_normalizes_plain_labels(self) -> None:
         cleaned = clean_review_output(
             "\n".join(
                 [
@@ -286,10 +361,10 @@ class ReviewPromptTests(unittest.TestCase):
                     "</think> Strength: The role is clear.",
                     "Fix 1: Add one concrete detail.",
                     "Fix 2: Add another example.",
+                    "Fix 3: Cut the repeated line.",
                     "Next run: Record one complete sentence.",
                 ]
-            ),
-            expected_labels=expected_labels,
+            )
         )
 
         self.assertEqual(
@@ -297,12 +372,14 @@ class ReviewPromptTests(unittest.TestCase):
             "\n".join(
                 [
                     "- Strength: The role is clear.",
-                    "- Fix: Add one concrete detail.",
+                    "- Fix 1: Add one concrete detail.",
+                    "- Fix 2: Add another example.",
+                    "- Fix 3: Cut the repeated line.",
                     "- Next run: Record one complete sentence.",
                 ]
             ),
         )
-        self.assertTrue(is_valid_scorecard_shape(cleaned, expected_labels=expected_labels))
+        self.assertTrue(is_valid_scorecard_shape(cleaned))
 
     def test_clean_review_output_normalizes_nested_next_run_label(self) -> None:
         cleaned = clean_review_output(
@@ -311,6 +388,7 @@ class ReviewPromptTests(unittest.TestCase):
                     "- Strength: The topic is clear.",
                     "- Fix: Fix 1: Make the preference explicit.",
                     "- Fix: Fix 2: Reduce the filler-heavy opening.",
+                    "- Fix: Fix 3: Cut the repeated ending.",
                     "- Fix: Next run: Say the final sentence once without fillers.",
                     "- Fix: Extra advice should be dropped.",
                 ]
@@ -324,6 +402,7 @@ class ReviewPromptTests(unittest.TestCase):
                     "- Strength: The topic is clear.",
                     "- Fix 1: Make the preference explicit.",
                     "- Fix 2: Reduce the filler-heavy opening.",
+                    "- Fix 3: Cut the repeated ending.",
                     "- Next run: Say the final sentence once without fillers.",
                 ]
             ),
@@ -336,26 +415,60 @@ class ReviewPromptTests(unittest.TestCase):
                 [
                     "- Strength: The topic is clear.",
                     "- Fix 1: Make the preference explicit.",
-                    "- Fix 2: Slow the opening.",
                 ]
             )
         )
 
-        self.assertIn("expected 4 lines, found 3", issues)
+        self.assertIn("expected 3-5 lines, found 2", issues)
         self.assertFalse(is_valid_scorecard_shape("\n".join(["- Strength: Clear.", "- Fix 1: Specific."])))
 
-    def test_scorecard_shape_issues_accept_short_contract_when_expected(self) -> None:
+    def test_scorecard_shape_issues_accepts_one_fix_contract(self) -> None:
         review = "\n".join(
             [
                 "- Strength: The role is clear.",
-                "- Fix: Add one concrete detail.",
+                "- Fix 1: Add one concrete detail.",
                 "- Next run: Record the opening once.",
             ]
         )
-        expected_labels = ("Strength", "Fix", "Next run")
 
-        self.assertEqual(scorecard_shape_issues(review, expected_labels=expected_labels), [])
-        self.assertTrue(is_valid_scorecard_shape(review, expected_labels=expected_labels))
+        self.assertEqual(scorecard_shape_issues(review), [])
+        self.assertTrue(is_valid_scorecard_shape(review))
+
+    def test_quote_faithfulness_issues_accept_exact_transcript_quote(self) -> None:
+        transcript = "Sam was always the one who'd jump in first, freezing or not."
+        review = '- Strength: "jump in first, freezing or not" is the real image.'
+
+        self.assertEqual(quote_faithfulness_issues(review, transcript), [])
+
+    def test_quote_faithfulness_issues_flags_misquote(self) -> None:
+        transcript = "Sam was always the one who'd jump in first, freezing or not."
+        review = '- Strength: "He froze or not" is the real image.'
+
+        self.assertEqual(
+            quote_faithfulness_issues(review, transcript),
+            ['quoted span not found in transcript: "He froze or not"'],
+        )
+
+    def test_quote_faithfulness_issues_ignores_short_labels(self) -> None:
+        transcript = "This has no filler words."
+        review = '- Fix 1: Replace "um" only if it appears.'
+
+        self.assertEqual(quote_faithfulness_issues(review, transcript), [])
+
+    def test_clean_unfaithful_review_quotes_removes_only_unmatched_quote_marks(self) -> None:
+        transcript = "Sam would jump in first, freezing or not."
+        review = (
+            '- Strength: "jump in first, freezing or not" is specific.\n'
+            '- Fix 1: "He froze or not" should be sharper.'
+        )
+
+        self.assertEqual(
+            clean_unfaithful_review_quotes(review, transcript),
+            (
+                '- Strength: "jump in first, freezing or not" is specific.\n'
+                "- Fix 1: He froze or not should be sharper."
+            ),
+        )
 
 
 if __name__ == "__main__":

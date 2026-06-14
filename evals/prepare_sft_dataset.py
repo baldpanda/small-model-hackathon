@@ -24,11 +24,14 @@ SPLIT_REPORT_NAME = "sft_split_report.json"
 VAL_FRACTION = 0.2
 SEED = 42
 SMOKE_SIZE = 8
-ALLOWED_ASSISTANT_LABELS = {"Strength", "Fix", "Polish", "Next run"}
+ALLOWED_ASSISTANT_LABELS = {"Strength", "Fix 1", "Fix 2", "Fix 3", "Next run"}
 LABEL_MAP = {
     "strength": "Strength",
     "fix": "Fix",
-    "polish": "Polish",
+    "fix 1": "Fix",
+    "fix 2": "Fix",
+    "fix 3": "Fix",
+    "polish": "Fix",
     "next run": "Next run",
     "next step": "Next run",
     "the one thing that matters": "Fix",
@@ -122,11 +125,13 @@ def read_unique_csv(path: Path, label: str) -> dict[str, dict[str, Any]]:
 
 
 def build_sft_record(gold_row: dict[str, Any], stats_row: dict[str, Any]) -> dict[str, Any]:
-    from review import _build_messages
+    from review import _build_messages, clean_unfaithful_review_quotes
 
     source_id = str(gold_row["id"]).strip()
     transcript = required_text(gold_row, "text", source_id)
     assistant = normalize_gold_review(required_text(gold_row, "gold_review", source_id))
+    assistant = clean_unfaithful_review_quotes(assistant, transcript)
+    validate_assistant_scorecard(assistant)
     stats = build_prompt_stats(gold_row, stats_row)
     messages = _build_messages(transcript, stats)
     messages.append({"role": "assistant", "content": assistant})
@@ -185,6 +190,7 @@ def build_metadata(gold_row: dict[str, Any], stats_row: dict[str, Any], stats: d
 def normalize_gold_review(review: str) -> str:
     lines = [line.strip() for line in review.splitlines() if line.strip()]
     normalized_lines = []
+    fix_count = 0
     for line in lines:
         body = strip_bullet(line)
         if ":" not in body:
@@ -193,6 +199,11 @@ def normalize_gold_review(review: str) -> str:
         label = LABEL_MAP.get(raw_label.strip().lower())
         if label is None:
             raise ValueError(f"Unsupported gold review label: {raw_label}")
+        if label == "Fix":
+            fix_count += 1
+            if fix_count > 3:
+                raise ValueError("Gold review has more than 3 fix bullets")
+            label = f"Fix {fix_count}"
         content = content.strip()
         if not content:
             raise ValueError(f"Gold review label has no content: {raw_label}")
@@ -298,8 +309,8 @@ def validate_assistant_scorecard(text: str) -> None:
     bullets = [line for line in lines if line.startswith("- ")]
     if len(bullets) != len(lines):
         raise ValueError("Assistant output must contain only hyphen bullets")
-    if not 2 < len(bullets) <= 4:
-        raise ValueError(f"Assistant output must have 3-4 bullets, found {len(bullets)}")
+    if not 2 < len(bullets) <= 5:
+        raise ValueError(f"Assistant output must have 3-5 bullets, found {len(bullets)}")
     labels = [line[2:].split(":", 1)[0].strip() if ":" in line else "" for line in bullets]
     if labels[0] != "Strength":
         raise ValueError("Assistant output must start with Strength")

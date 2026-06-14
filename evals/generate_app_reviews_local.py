@@ -26,7 +26,13 @@ def main() -> None:
     if not records:
         raise SystemExit(f"No records found in {args.input}")
 
-    from review import PROMPT_VERSION, expected_scorecard_labels, review_speech, scorecard_shape_issues
+    from review import (
+        PROMPT_VERSION,
+        expected_scorecard_labels,
+        quote_faithfulness_issues,
+        review_speech,
+        scorecard_shape_issues,
+    )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     completed_ids = read_completed_ids(args.output) if args.resume else set()
@@ -62,6 +68,8 @@ def main() -> None:
                     expected_labels=scorecard_labels,
                 )
                 result["scorecard_shape_valid"] = not result["scorecard_shape_issues"]
+                result["quote_faithfulness_issues"] = quote_faithfulness_issues(result["review"], transcript)
+                result["quote_faithfulness_valid"] = not result["quote_faithfulness_issues"]
             except Exception as exc:  # noqa: BLE001 - eval rows should capture failures and continue.
                 LOGGER.warning("Review failed for %s: %s", transcript_id, exc)
                 result["error_type"] = type(exc).__name__

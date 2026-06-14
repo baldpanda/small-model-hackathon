@@ -17,15 +17,14 @@ This phase turns the Modal-trained adapter artifact into an app-loadable model p
 - Private adapter repos should be accessed with the existing `HF_TOKEN` or `HUGGINGFACEHUB_API_TOKEN` secret.
 - Populated prompt logging is opt-in via `REVIEW_LOG_PROMPT=1` and should be enabled only while debugging because it logs transcript text and stats.
 - The output shape follows the app prompt contract.
-- Substantive clips use the four-line contract:
+- All clips use the variable numbered-fix contract:
   1. `Strength:`
   2. `Fix 1:`
-  3. `Fix 2:`
+  3. optional `Fix 2:` and `Fix 3:`
   4. `Next run:`
-- Clips under 50 words or under 20 seconds use the shorter three-line contract:
-  1. `Strength:`
-  2. `Fix:`
-  3. `Next run:`
+- The model should use one fix by default and mention stats only when they are one of the highest-impact fixes.
+- Generation uses a small repetition penalty plus post-generation duplicate-fix cleanup. `no_repeat_ngram_size=3` is not used because it corrupted the fixed scorecard labels in held-out Modal testing.
+- Review/eval paths track quote faithfulness: any double-quoted feedback span should appear in the transcript after light normalization.
 - No retry or repair generation pass is added in this phase.
 
 ## Configuration
@@ -54,5 +53,6 @@ When enabled, Space logs include the populated MiniCPM chat-template prompt that
 - `review_speech()` keeps working with the base model when `REVIEW_ADAPTER_ID` is not configured.
 - Adapter loading is logged without exposing secrets.
 - Prompt logging is disabled by default and logs the populated prompt only when `REVIEW_LOG_PROMPT` is truthy.
-- The scorecard prompt and validator accept the short three-line contract for clips with too little material for two useful fixes.
+- The scorecard prompt and validator accept the variable numbered-fix contract.
+- Eval outputs report quote-faithfulness issues for quoted spans that are not present in the transcript.
 - Unit tests cover adapter env parsing and base-model fallback behavior.

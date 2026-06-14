@@ -76,10 +76,11 @@ def train_lora_remote(
     data_rel_path: str,
     val_rel_path: str | None = None,
     base_model: str = MODEL_ID,
-    epochs: int = 2,
+    epochs: int = 4,
     limit: int | None = None,
     max_steps: int = 0,
     save_steps: int = 25,
+    gradient_accumulation_steps: int = 2,
 ) -> dict[str, Any]:
     import json
     from pathlib import Path
@@ -94,6 +95,7 @@ def train_lora_remote(
     set_seed(42)
 
     output_dir = Path(REMOTE_VOLUME_DIR) / "runs" / run_name
+    output_dir.mkdir(parents=True, exist_ok=True)
     adapter_dir = output_dir / "adapter_final"
     train_rows = load_message_rows(Path(REMOTE_VOLUME_DIR) / data_rel_path, limit=limit)
     val_rows = load_message_rows(Path(REMOTE_VOLUME_DIR) / val_rel_path) if val_rel_path else None
@@ -104,6 +106,11 @@ def train_lora_remote(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.chat_template = TRAIN_CHAT_TEMPLATE
+    mask_report = build_assistant_mask_report(tokenizer, train_rows)
+    (output_dir / "assistant_mask_check.json").write_text(
+        json.dumps(mask_report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
@@ -129,7 +136,7 @@ def train_lora_remote(
         "output_dir": str(output_dir),
         "num_train_epochs": epochs,
         "per_device_train_batch_size": 4,
-        "gradient_accumulation_steps": 4,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
         "learning_rate": 2e-4,
         "warmup_ratio": 0.03,
         "lr_scheduler_type": "cosine",
@@ -169,6 +176,16 @@ def train_lora_remote(
 
     trainer = SFTTrainer(**trainer_kwargs)
     train_result = trainer.train()
+    trainer.save_state()
+    train_metrics = make_json_safe(getattr(train_result, "metrics", {}) or {})
+    (output_dir / "train_metrics.json").write_text(
+        json.dumps(train_metrics, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (output_dir / "log_history.json").write_text(
+        json.dumps(make_json_safe(trainer.state.log_history), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     trainer.model.save_pretrained(adapter_dir)
     volume.commit()
 
@@ -179,10 +196,18 @@ def train_lora_remote(
         "base_model": base_model,
         "train_rows": len(train_rows),
         "val_rows": len(val_rows or []),
+        "epochs": epochs,
         "max_steps": max_steps,
+        "per_device_train_batch_size": 4,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "effective_batch_size": 4 * gradient_accumulation_steps,
         "adapter_dir": str(adapter_dir.relative_to(REMOTE_VOLUME_DIR)),
+        "assistant_mask_check": str((output_dir / "assistant_mask_check.json").relative_to(REMOTE_VOLUME_DIR)),
+        "trainer_state": str((output_dir / "trainer_state.json").relative_to(REMOTE_VOLUME_DIR)),
+        "train_metrics": str((output_dir / "train_metrics.json").relative_to(REMOTE_VOLUME_DIR)),
+        "log_history": str((output_dir / "log_history.json").relative_to(REMOTE_VOLUME_DIR)),
         "adapter_files": adapter_files,
-        "training_loss": getattr(train_result, "training_loss", None),
+        "training_loss": train_metrics.get("train_loss"),
     }
 
 
@@ -196,6 +221,7 @@ def main(
     limit: int | None = None,
     max_steps: int = 2,
     save_steps: int = 25,
+    gradient_accumulation_steps: int = 2,
 ) -> None:
     result = train_lora_remote.remote(
         run_name=run_name,
@@ -206,6 +232,7 @@ def main(
         limit=limit,
         max_steps=max_steps,
         save_steps=save_steps,
+        gradient_accumulation_steps=gradient_accumulation_steps,
     )
     print(result)
 
@@ -223,6 +250,97 @@ def load_message_rows(path: Any, limit: int | None = None) -> list[dict[str, Any
     if not rows:
         raise ValueError(f"No rows found in {full_path}")
     return rows
+
+
+def build_assistant_mask_report(tokenizer: Any, rows: list[dict[str, Any]], sample_size: int = 3) -> dict[str, Any]:
+    reports = []
+    for row in rows[:sample_size]:
+        messages = row.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise ValueError(f"{row.get('id', '<unknown>')} has no messages for mask check")
+
+        encoded = tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=False,
+            return_dict=True,
+            return_assistant_tokens_mask=True,
+        )
+        input_ids = flatten_token_values(encoded.get("input_ids"))
+        assistant_mask = encoded.get("assistant_masks")
+        if assistant_mask is None:
+            assistant_mask = encoded.get("assistant_tokens_mask")
+        assistant_mask = flatten_token_values(assistant_mask)
+        if not assistant_mask:
+            raise RuntimeError(
+                "Tokenizer did not return an assistant token mask. "
+                "Check the training chat template generation block and TRL/transformers versions."
+            )
+        if len(input_ids) != len(assistant_mask):
+            raise RuntimeError(
+                f"Assistant mask length mismatch for {row.get('id', '<unknown>')}: "
+                f"{len(assistant_mask)} mask values for {len(input_ids)} tokens"
+            )
+
+        assistant_token_ids = [token_id for token_id, keep in zip(input_ids, assistant_mask) if keep]
+        decoded_assistant_tokens = tokenizer.decode(assistant_token_ids, skip_special_tokens=False)
+        leaked_markers = [
+            marker
+            for marker in ("<|im_start|>system", "<|im_start|>user", "Stats:", "Transcript:")
+            if marker in decoded_assistant_tokens
+        ]
+        if not assistant_token_ids:
+            raise RuntimeError(f"Assistant mask is empty for {row.get('id', '<unknown>')}")
+        if leaked_markers:
+            raise RuntimeError(
+                f"Assistant mask for {row.get('id', '<unknown>')} includes non-assistant markers: {leaked_markers}"
+            )
+        if "Strength:" not in decoded_assistant_tokens:
+            raise RuntimeError(
+                f"Assistant mask for {row.get('id', '<unknown>')} does not include the gold feedback labels"
+            )
+
+        assistant_text = str(messages[-1].get("content") or "")
+        reports.append(
+            {
+                "id": row.get("id"),
+                "total_tokens": len(input_ids),
+                "assistant_loss_tokens": len(assistant_token_ids),
+                "assistant_token_ratio": round(len(assistant_token_ids) / len(input_ids), 4),
+                "assistant_words": len(assistant_text.split()),
+                "masked_preview": decoded_assistant_tokens[:500],
+            }
+        )
+
+    return {
+        "sample_size": len(reports),
+        "checked_ids": [report["id"] for report in reports],
+        "reports": reports,
+    }
+
+
+def flatten_token_values(value: Any) -> list[int]:
+    if value is None:
+        return []
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, list) and value and isinstance(value[0], list):
+        value = value[0]
+    return [int(item) for item in value]
+
+
+def make_json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): make_json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [make_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [make_json_safe(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if hasattr(value, "item"):
+        return make_json_safe(value.item())
+    return str(value)
 
 
 def hf_kwargs() -> dict[str, str]:
