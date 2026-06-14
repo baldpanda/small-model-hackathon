@@ -539,7 +539,6 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     waveform_options=gr.WaveformOptions(
                         waveform_color="#bf8a3a",
                         waveform_progress_color="#7a2636",
-                        show_controls=False,
                     ),
                 )
                 countdown = gr.HTML(
