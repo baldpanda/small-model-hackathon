@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from evals.prepare_sft_dataset import (
+    build_sft_record,
     build_prompt_stats,
     normalize_gold_review,
     prepare_records,
@@ -25,7 +26,31 @@ class PrepareSftDatasetTests(unittest.TestCase):
             "\n".join(
                 [
                     "- Strength: Specific opening.",
-                    "- Fix: Choose one point.",
+                    "- Fix 1: Choose one point.",
+                    "- Next run: Rehearse once.",
+                ]
+            ),
+        )
+
+    def test_normalize_gold_review_accepts_three_middle_fixes(self) -> None:
+        review = "\n".join(
+            [
+                "• Strength: Specific opening.",
+                "• Fix: Cut the generic setup.",
+                "• Polish: Slow the toast line.",
+                "• Fix: Name the next action.",
+                "• Next run: Rehearse once.",
+            ]
+        )
+
+        self.assertEqual(
+            normalize_gold_review(review),
+            "\n".join(
+                [
+                    "- Strength: Specific opening.",
+                    "- Fix 1: Cut the generic setup.",
+                    "- Fix 2: Slow the toast line.",
+                    "- Fix 3: Name the next action.",
                     "- Next run: Rehearse once.",
                 ]
             ),
@@ -52,6 +77,39 @@ class PrepareSftDatasetTests(unittest.TestCase):
         self.assertEqual(stats["wpm"], 160.0)
         self.assertEqual(stats["filler_count"], 3)
         self.assertEqual(stats["notable_fillers"], [{"filler": "um", "count": 2}, {"filler": "so", "count": 1}])
+
+    def test_build_sft_record_cleans_unfaithful_gold_quotes(self) -> None:
+        record = build_sft_record(
+            {
+                "id": "1",
+                "type": "best_man",
+                "quality": "test",
+                "variant": "quote-cleaning",
+                "garble": "none",
+                "text": "Sam would jump in first, freezing or not.",
+                "gold_review": (
+                    '• Strength: "jump in first, freezing or not" is specific.\n'
+                    '• Fix: "He froze or not" should be sharper.\n'
+                    "• Next run: Rehearse once."
+                ),
+            },
+            {
+                "id": "1",
+                "computed_word_count": "8",
+                "computed_filler_count": "0",
+                "computed_notable_fillers": "",
+                "computed_filler_counts_json": "{}",
+            },
+        )
+
+        self.assertEqual(
+            record["messages"][2]["content"],
+            (
+                '- Strength: "jump in first, freezing or not" is specific.\n'
+                "- Fix 1: He froze or not should be sharper.\n"
+                "- Next run: Rehearse once."
+            ),
+        )
 
     def test_prepare_records_splits_and_keeps_smoke_in_train(self) -> None:
         gold_rows = {}

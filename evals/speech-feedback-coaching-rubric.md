@@ -23,20 +23,20 @@ A valid scorecard must follow this shape:
 - no headers
 - no preamble
 - no closing reassurance
-- exactly four hyphen bullets
-- 70-120 words by default
+- exactly 3-5 hyphen bullets
+- 60-120 words by default
 - one specific opening strength
-- two fixed prioritized fixes
+- one to three prioritized fixes
 - one concrete next rehearsal step
 
 The app-facing scorecard should use this exact label order:
 
 1. `Strength:` one earned transcript-specific strength.
-2. `Fix 1:` the highest-impact content or structure change.
-3. `Fix 2:` the highest-impact delivery or stats-based change. If delivery stats are already controlled, use this for proportionate polish without inventing a problem.
+2. `Fix 1:` the single highest-impact fix.
+3. Optional `Fix 2:` and `Fix 3:` only when each additional fix is clearly useful and distinct.
 4. `Next run:` one concrete rehearsable action.
 
-This fixed shape is deliberately stricter than earlier gold drafts. It is meant to improve small-model reliability and make missing fields obvious during evals.
+Use one fix by default, especially for short, thin, repetitive, or already strong clips. Mention pace, duration, fillers, or other stats only when they are one of the highest-impact fixes; stats do not get a reserved slot.
 
 ## Taste Profile
 
@@ -48,7 +48,7 @@ The feedback should be direct, concise, and specific.
 - Do not sanitize best-man humor into generic professional speaking.
 - Protect the sincere emotional turn in wedding and celebration speeches.
 - Match the feedback depth to the speech length and stakes.
-- Pick the two fixes that matter most.
+- Pick only the fixes that matter; one good fix is better than two padded fixes.
 - Translate stats into actions, not recitations.
 - Never invent transcript details, stats, emotions, or audience reactions.
 
@@ -87,8 +87,9 @@ These failures should fail the whole output even if some dimensions score well:
 - exposes reasoning traces or thinking-mode content
 - rewrites the full speech by default
 - gives generic wedding advice to a clearly non-wedding transcript
-- misses the exact four-bullet scorecard shape
-- produces more than two fixes for a normal rehearsal
+- misses the exact 3-5 bullet scorecard shape
+- produces more than three fixes
+- invents a second or third fix that repeats the same issue in different words
 - omits the concrete next rehearsal step
 - ignores the stats block entirely when stats are present and relevant
 

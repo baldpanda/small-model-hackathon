@@ -72,12 +72,10 @@ Required inference behavior:
 - keep output concise and user-facing
 - do not expose reasoning traces
 - train and evaluate against the compact scorecard output contract in `evals/speech-feedback-coaching-rubric.md`
-- use the four-line app-facing scorecard shape for substantive clips: `Strength`, `Fix 1`, `Fix 2`, `Next run`
-- use a shorter three-line app-facing scorecard for clips with too little material for two useful fixes: `Strength`, `Fix`, `Next run`
-- treat clips under 50 words or under 20 seconds as too short for two fixes unless future product work defines a separate mode
-- in the four-line shape, use `Fix 1` for the highest-impact content or structure change
-- in the four-line shape, use `Fix 2` for the highest-impact delivery or stats-based change, or proportionate polish when stats are already controlled
-- require the delivery/stat fix to use pace or filler stats when those stats are outside the controlled range
+- use the variable app-facing scorecard shape: `Strength`, `Fix 1`, optional `Fix 2` and `Fix 3`, `Next run`
+- use one fix by default, especially for short, thin, repetitive, or already strong clips
+- add a second or third fix only when each additional fix is clearly useful and distinct
+- mention pace, duration, fillers, or other stats only when they are one of the highest-impact fixes
 - handle Toastmasters roles as functional role briefings, not as wedding-style speeches or generic vocabulary examples
 - keep generation conservative for schema adherence (`temperature=0.1` in the current app path)
 - record scorecard-shape validity during evals, but do not spend a second GPU call on retry or repair generation
@@ -94,22 +92,16 @@ The rubric also defines hard gates for material hallucination, reasoning traces,
 
 The current prompt-tightening pass standardizes the app-facing scorecard to hyphen bullets.
 
-Substantive clips use four bullets:
+All clips use a variable numbered-fix contract:
 
 1. `Strength:` one earned transcript-specific strength.
-2. `Fix 1:` the highest-impact content or structure change.
-3. `Fix 2:` the highest-impact delivery or stats-based change.
+2. `Fix 1:` the single highest-impact fix.
+3. Optional `Fix 2:` and `Fix 3:` only when each additional fix is clearly useful and distinct.
 4. `Next run:` one concrete rehearsable action.
 
-Clips under 50 words or under 20 seconds use three bullets:
+The variable shape exists to avoid forcing a second fix from thin material. It is better to return one useful fix than two repetitive or invented fixes. Stats do not get a reserved slot; the model should mention them only when they are among the highest-impact issues for the next rehearsal.
 
-1. `Strength:` one earned transcript-specific strength.
-2. `Fix:` the single highest-impact fix, chosen from content, structure, delivery, or stats.
-3. `Next run:` one concrete rehearsable action.
-
-The short shape exists to avoid forcing a second fix from thin material. It is better to return one useful fix than two repetitive or invented fixes.
-
-This is an inference-side stabilization pass. It does not require retraining by itself, and it intentionally does not add retry behavior because a second generation would increase GPU work.
+This is an inference-side stabilization pass. It does not require retraining by itself, and it intentionally does not add retry behavior because a second generation would increase GPU work. Use a small repetition penalty plus duplicate-fix cleanup for repeated-fix failures. Do not use `no_repeat_ngram_size=3`; held-out Modal testing showed it breaks the fixed label tokens into invalid labels such as `Fix 4`.
 
 ## Evaluation Workflow
 
@@ -193,12 +185,13 @@ Use OpenBMB's TRL + PEFT LoRA recipe for MiniCPM5-1B:
 - the training-only chat-template patch with a generation block
 - original MiniCPM5 tokenizer reloaded for inference and evaluation
 
-Training defaults should start conservative:
+Training defaults should start conservative but must still produce enough optimizer updates to learn the format:
 
 - LoRA, not full-model fine-tuning
 - BF16 where supported
 - bounded context length suitable for two-minute rehearsal transcripts
-- small number of epochs
+- 3-6 epochs for the full run, with the current recommended full run using 4 epochs
+- gradient accumulation low enough to avoid a tiny update count; the current recommended full run uses per-device batch size 4 and gradient accumulation 2, for an effective batch size of 8 and roughly 13 optimizer updates per epoch on 104 training rows
 - explicit seed
 - saved PEFT adapter artifacts
 
@@ -208,8 +201,24 @@ Modal expectations:
 - use Modal Secrets for Hugging Face access if needed
 - use Modal Volumes for training data copies, checkpoints, logs, and adapter artifacts
 - run a tiny 8-example smoke training job before the full run
-- use validation loss on the 26-row validation split as a training sanity check
+- use validation loss on the 26-row validation split as a training sanity check, not as the product-quality metric
+- save `trainer_state.json`, train metrics, log history, and an assistant-mask check artifact so the loss curve and masking can be inspected after training
+- confirm assistant-only loss masking before training by checking that masked loss tokens contain assistant feedback and do not contain the system prompt, stats block, or transcript
 - persist the final adapter as PEFT files such as `adapter_model.safetensors` and `adapter_config.json`
+
+Model selection should be based on held-out review quality, not eval loss alone. After each candidate adapter run, generate outputs for the same 15 held-out transcript-plus-stats examples, score them against `evals/speech-feedback-coaching-rubric.md`, and compare:
+
+- hard-gate failure rate
+- per-dimension rubric deltas against the frozen prompt baseline
+- stats-use failures
+- invented-detail failures
+- scorecard-shape failures
+- repeated or non-distinct fix failures
+- quote-faithfulness failures, where double-quoted feedback spans are not present in the transcript after light normalization
+
+Before the full run, verify that held-out inputs and SFT inputs use the same computed stats-block schema: duration, word count, pace with band, filler count/rate with band, and optional notable fillers. Do not trust held-out comparisons if the 15 eval rows are missing the stats block that the 130 training examples include.
+
+Also verify the gold assistant outputs before the full run. With only 104 training examples, the adapter will lean heavily on structural patterns in the gold data. The data should include enough single-fix examples and should allow one to three prioritized fixes where appropriate; otherwise the adapter will inherit a forced two-fix habit and repeat the same point in different words.
 
 Merging the adapter into a full model is optional and not required for this phase.
 
@@ -257,7 +266,7 @@ Use sanitized examples only when a committed fixture is necessary for scripts or
 10. Run the full Modal LoRA training job.
 11. Evaluate the adapter with thinking mode off.
 12. Summarize whether the adapter should be considered for a later app-integration phase.
-13. If adapter output shape remains unreliable, normalize future gold examples to the fixed four-line contract before any retraining run.
+13. If adapter output shape remains unreliable, normalize future gold examples to the variable numbered-fix contract before any retraining run.
 
 ## Open Questions
 

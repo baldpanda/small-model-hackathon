@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import sys
 from pathlib import Path
@@ -8,24 +9,49 @@ from typing import Any
 
 
 EVALS_DIR = Path(__file__).resolve().parent
+REPO_ROOT = EVALS_DIR.parent
 DEFAULT_EVAL_CSV = EVALS_DIR / "data" / "eval_transcripts.csv"
 
 
 def main() -> None:
     args = parse_args()
+    sys.path.insert(0, str(REPO_ROOT))
     sys.path.insert(0, str(EVALS_DIR))
     from prepare_sft_dataset import read_csv, transcript_hashes, validate_assistant_scorecard
 
     rows = read_jsonl(args.input)
     eval_hashes = transcript_hashes(read_csv(args.eval_csv), transcript_keys=("transcript", "text"))
-    validate_rows(rows, eval_hashes=eval_hashes, validate_assistant_scorecard=validate_assistant_scorecard)
+    validate_rows(
+        rows,
+        eval_hashes=eval_hashes,
+        validate_assistant_scorecard=validate_assistant_scorecard,
+        check_quote_faithfulness=args.check_quote_faithfulness,
+    )
+    fix_counts = assistant_fix_count_distribution(rows)
+    single_fix_rows = fix_counts.get(1, 0)
+    if single_fix_rows < args.min_single_fix_rows:
+        raise ValueError(
+            f"{args.input} has {single_fix_rows} single-fix rows; expected at least {args.min_single_fix_rows}"
+        )
     print(f"Validated {len(rows)} SFT rows in {args.input}")
+    print("Assistant fix-count distribution: " + format_fix_counts(fix_counts))
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate MiniCPM5 SFT messages JSONL.")
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--eval-csv", type=Path, default=DEFAULT_EVAL_CSV)
+    parser.add_argument(
+        "--min-single-fix-rows",
+        type=int,
+        default=0,
+        help="Fail if fewer than this many rows contain exactly one middle fix/polish bullet.",
+    )
+    parser.add_argument(
+        "--check-quote-faithfulness",
+        action="store_true",
+        help="Fail if assistant double-quoted spans are not found in the transcript after light normalization.",
+    )
     return parser.parse_args()
 
 
@@ -46,7 +72,16 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def validate_rows(rows: list[dict[str, Any]], *, eval_hashes: set[str], validate_assistant_scorecard) -> None:
+def validate_rows(
+    rows: list[dict[str, Any]],
+    *,
+    eval_hashes: set[str],
+    validate_assistant_scorecard,
+    check_quote_faithfulness: bool = False,
+) -> None:
+    if check_quote_faithfulness:
+        from review import quote_faithfulness_issues
+
     seen_ids = set()
     seen_sources = set()
     for index, row in enumerate(rows, start=1):
@@ -80,7 +115,38 @@ def validate_rows(rows: list[dict[str, Any]], *, eval_hashes: set[str], validate
 
         if normalized_hash(transcript) in eval_hashes:
             raise ValueError(f"{row_id} overlaps final eval set by transcript hash")
-        validate_assistant_scorecard(str(messages[2].get("content") or ""))
+        assistant = str(messages[2].get("content") or "")
+        validate_assistant_scorecard(assistant)
+        if check_quote_faithfulness:
+            issues = quote_faithfulness_issues(assistant, transcript)
+            if issues:
+                formatted = "; ".join(issues[:3])
+                raise ValueError(f"{row_id} assistant quote-faithfulness failed: {formatted}")
+
+
+def assistant_fix_count_distribution(rows: list[dict[str, Any]]) -> Counter[int]:
+    counts: Counter[int] = Counter()
+    for row in rows:
+        messages = row.get("messages") or []
+        assistant = str(messages[2].get("content") or "") if len(messages) >= 3 else ""
+        counts[count_middle_bullets(assistant)] += 1
+    return counts
+
+
+def count_middle_bullets(assistant: str) -> int:
+    labels = []
+    for line in assistant.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("- ") or ":" not in stripped:
+            continue
+        labels.append(stripped[2:].split(":", 1)[0].strip())
+    if len(labels) < 2:
+        return 0
+    return len(labels[1:-1])
+
+
+def format_fix_counts(counts: Counter[int]) -> str:
+    return ", ".join(f"{fix_count} fix(es): {counts[fix_count]}" for fix_count in sorted(counts)) or "none"
 
 
 def required_string(row: dict[str, Any], key: str, index: int) -> str:
