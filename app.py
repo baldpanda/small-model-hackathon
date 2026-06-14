@@ -17,6 +17,7 @@ from rehearsal_limits import (
     validate_recording_duration_seconds,
 )
 from review import review_speech
+from speech_stats import build_transcript_stats
 from timing import get_audio_duration_seconds, summarize_timing
 from transcribe import transcribe_recording
 
@@ -301,7 +302,12 @@ def _process_valid_rehearsal(
     )
 
     try:
-        feedback = _timed_step(timer, "review generation", lambda: review_speech(transcript))
+        review_stats = build_transcript_stats(transcript, duration_seconds=duration_seconds)
+        feedback = _timed_step(
+            timer,
+            "review generation",
+            lambda: review_speech(transcript, stats=review_stats),
+        )
     except ValueError as exc:
         yield _format_final_outputs(
             transcript,

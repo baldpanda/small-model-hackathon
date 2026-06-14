@@ -5,3 +5,12 @@ __pycache__/
 .DS_Store
 model_details/
 traces/
+data/private/
+data/generated/
+eval/private/
+evals/private/
+evals/.venv*/
+runs/
+modal-artifacts/
+adapters/
+evals/data/
