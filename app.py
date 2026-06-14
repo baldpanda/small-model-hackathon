@@ -1,4 +1,5 @@
 import logging
+import random
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -24,9 +25,41 @@ from transcribe import transcribe_recording
 
 APP_DIR = Path(__file__).parent
 RECORDING_WINDOW_LABEL = accepted_recording_window_label()
-SPEECH_FEEDBACK_PENDING = "_Speech feedback will appear after the model review finishes._"
-TIMING_FEEDBACK_PENDING = "_Timing feedback will appear after transcription._"
-FILLER_FEEDBACK_PENDING = "_Filler feedback will appear after transcription._"
+SPEECH_FEEDBACK_PENDING = "_The honest review lands once the coach has heard you out._"
+TIMING_FEEDBACK_PENDING = "_Pacing notes land after the transcript._"
+FILLER_FEEDBACK_PENDING = "_Crutch-word count lands after the transcript._"
+COMPLETION_STATUS = "All done — go raise that glass."
+
+CONFETTI_COLORS = ("#bf8a3a", "#7a2636", "#183d34", "#fff9ec", "#efe3ce")
+CONFETTI_PIECES = 28
+
+
+def _build_confetti_html() -> str:
+    rng = random.Random(7)
+    pieces: list[str] = []
+    for _ in range(CONFETTI_PIECES):
+        left = rng.uniform(0, 100)
+        color = rng.choice(CONFETTI_COLORS)
+        delay = rng.uniform(0, 0.7)
+        duration = rng.uniform(2.4, 3.8)
+        drift = rng.uniform(-12, 12)
+        style = (
+            f"left:{left:.1f}vw;"
+            f"background:{color};"
+            f"--drift:{drift:.1f}vw;"
+            f"animation-delay:{delay:.2f}s;"
+            f"animation-duration:{duration:.2f}s;"
+        )
+        pieces.append(f'<span class="confetti-piece" style="{style}"></span>')
+    return f'<div id="confetti-stage" aria-hidden="true">{"".join(pieces)}</div>'
+
+
+HERO_RINGS_SVG = (
+    '<svg class="hero-rings" viewBox="0 0 96 40" aria-hidden="true">'
+    '<circle cx="34" cy="20" r="14"/>'
+    '<circle cx="62" cy="20" r="14"/>'
+    "</svg>"
+)
 
 
 def _format_clock_seconds(seconds: int) -> str:
@@ -117,7 +150,45 @@ COUNTDOWN_HEAD = f"""
     }});
   }};
 
+  const watchCompletion = () => {{
+    const status = document.querySelector("#status-output");
+    const stage = document.querySelector("#confetti-stage");
+    if (!status || !stage) {{
+      window.setTimeout(watchCompletion, 500);
+      return;
+    }}
+
+    const completionMarker = "All done";
+    let lastTriggered = false;
+    let resetTimer = null;
+
+    const burst = () => {{
+      stage.classList.remove("is-bursting");
+      void stage.offsetWidth;
+      stage.classList.add("is-bursting");
+      if (resetTimer) {{
+        window.clearTimeout(resetTimer);
+      }}
+      resetTimer = window.setTimeout(() => {{
+        stage.classList.remove("is-bursting");
+        resetTimer = null;
+      }}, 4200);
+    }};
+
+    const observer = new MutationObserver(() => {{
+      const text = status.textContent || "";
+      const seen = text.includes(completionMarker);
+      if (seen && !lastTriggered) {{
+        burst();
+      }}
+      lastTriggered = seen;
+    }});
+
+    observer.observe(status, {{childList: true, characterData: true, subtree: true}});
+  }};
+
   window.addEventListener("load", wireAudioButtons);
+  window.addEventListener("load", watchCompletion);
   window.addEventListener("beforeunload", () => stopTimer());
 }})();
 </script>
@@ -248,8 +319,8 @@ def _process_valid_rehearsal(
         timing_preview,
         FILLER_FEEDBACK_PENDING,
         (
-            f"Recording received. Duration: {duration_seconds:.1f}s. "
-            f"Requested GPU budget: {requested_gpu_seconds}s. Starting transcription."
+            f"Got the recording — {duration_seconds:.1f}s on the clock. "
+            f"GPU budget reserved: {requested_gpu_seconds}s. Listening back now."
         ),
         timer,
     )
@@ -275,7 +346,7 @@ def _process_valid_rehearsal(
         SPEECH_FEEDBACK_PENDING,
         timing_preview,
         FILLER_FEEDBACK_PENDING,
-        "Transcript ready. Calculating timing feedback.",
+        "Transcript ready. Clocking your pacing.",
         timer,
     )
     timing_feedback = _timed_step(timer, "timing analysis", lambda: _build_timing_feedback(audio_path, transcript))
@@ -286,7 +357,7 @@ def _process_valid_rehearsal(
         SPEECH_FEEDBACK_PENDING,
         formatted_timing_feedback,
         FILLER_FEEDBACK_PENDING,
-        "Timing feedback ready. Counting filler words.",
+        "Pacing logged. Counting the crutch words.",
         timer,
     )
     filler_feedback = _timed_step(timer, "filler analysis", lambda: _build_filler_feedback(transcript))
@@ -297,7 +368,7 @@ def _process_valid_rehearsal(
         SPEECH_FEEDBACK_PENDING,
         formatted_timing_feedback,
         formatted_filler_feedback,
-        "Filler feedback ready. Generating speech feedback.",
+        "Crutch words tallied. Asking the coach for an honest take.",
         timer,
     )
 
@@ -314,7 +385,7 @@ def _process_valid_rehearsal(
             str(exc),
             timing_feedback,
             filler_feedback,
-            "Transcription complete. Review failed.",
+            "Heard you out — but the coach got stage fright.",
             timer,
         )
         return
@@ -324,7 +395,7 @@ def _process_valid_rehearsal(
             str(exc),
             timing_feedback,
             filler_feedback,
-            "Transcription complete. Review failed.",
+            "Heard you out — but the coach got stage fright.",
             timer,
         )
         return
@@ -334,7 +405,7 @@ def _process_valid_rehearsal(
             f"Review failed: {exc}",
             timing_feedback,
             filler_feedback,
-            "Transcription complete. Review failed.",
+            "Heard you out — but the coach got stage fright.",
             timer,
         )
         return
@@ -344,7 +415,7 @@ def _process_valid_rehearsal(
         feedback,
         timing_feedback,
         filler_feedback,
-        "Transcription, review, timing, and filler analysis complete.",
+        COMPLETION_STATUS,
         timer,
     )
 
@@ -354,12 +425,12 @@ def _clear_outputs(status: str) -> tuple[str, str, str, str, str]:
 
 
 def _reset_rehearsal() -> tuple[None, str, str, str, str, str]:
-    return (None, *_clear_outputs("Ready to record."))
+    return (None, *_clear_outputs("Glass raised — ready when you are."))
 
 
 def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
     if not audio_path:
-        yield _clear_outputs(f"Record a speech first. The app accepts recordings from {RECORDING_WINDOW_LABEL}.")
+        yield _clear_outputs(f"Record a speech first. We accept run-throughs from {RECORDING_WINDOW_LABEL}.")
         return
 
     try:
@@ -424,16 +495,18 @@ def _format_metric_markdown(summary: str) -> str:
 
 with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
     with gr.Column(elem_id="wedding-app"):
+        gr.HTML(_build_confetti_html())
         gr.HTML(
             f"""
             <section id="hero-panel">
-              <div class="kicker">Build Small Hackathon rehearsal desk</div>
+              <div class="kicker">Before the toast</div>
+              {HERO_RINGS_SVG}
               <h1>Best Man Speech Coach</h1>
               <p>
-                Record a two-minute run-through and get a wedding-scorecard readout:
-                transcript, structure notes, pacing, and filler habits before the next toast.
+                Record a quick run-through and we'll pour you an honest read of the toast:
+                transcript, pacing, crutch words, and a coach's note before you raise your glass.
               </p>
-              <div class="stamp">Off-brand Gradio edition</div>
+              <div class="stamp">Glass raised, ready when you are</div>
             </section>
             """
         )
@@ -441,8 +514,8 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
         with gr.Row(elem_id="practice-grid"):
             with gr.Column(scale=7, elem_classes=["scorecard-card"]):
                 gr.Markdown(
-                    "## Rehearsal Booth\n"
-                    f"Speak naturally. The app accepts recordings from {RECORDING_WINDOW_LABEL}."
+                    "## Step up to the mic\n"
+                    f"Take a breath, then go. We need {RECORDING_WINDOW_LABEL} to give you a fair read."
                 )
                 audio_input = gr.Audio(
                     sources=["microphone"],
@@ -458,55 +531,55 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                 )
                 with gr.Row(elem_id="rehearsal-actions"):
                     transcribe_button = gr.Button(
-                        "Review speech",
+                        "Hear me out",
                         variant="primary",
                         elem_id="review-button",
                         scale=3,
                     )
                     try_again_button = gr.Button(
-                        "Try again",
+                        "Another round",
                         variant="secondary",
                         elem_id="try-again-button",
                         scale=1,
                     )
 
             with gr.Column(scale=5, elem_classes=["scorecard-card"]):
-                gr.Markdown("## Scorecard Status")
+                gr.Markdown("## How it's going")
                 status_output = gr.Markdown(
-                    value="Ready to record.",
+                    value="Glass raised — ready when you are.",
                     elem_id="status-output",
                 )
 
         with gr.Row(elem_id="results-grid"):
             with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
-                gr.Markdown("## Transcript")
+                gr.Markdown("## What you said")
                 transcript_output = gr.Textbox(
                     label="Rehearsal transcript",
                     lines=14,
-                    placeholder="Your transcript will appear here after recording.",
+                    placeholder="Your transcript will land here once we've heard the recording.",
                     elem_id="transcript-output",
                 )
 
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
-                gr.Markdown("## Timing Feedback")
+                gr.Markdown("## Pacing")
                 timing_output = gr.Markdown(
-                    value="_Timing feedback will appear here after transcription._",
+                    value="_Pacing notes land here after the recording._",
                     elem_id="timing-output",
                     elem_classes=["score-output"],
                 )
 
         with gr.Row():
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
-                gr.Markdown("## Filler Feedback")
+                gr.Markdown("## Crutch words")
                 filler_output = gr.Markdown(
-                    value="_Filler feedback will appear here after transcription._",
+                    value="_Crutch-word count lands here after the recording._",
                     elem_classes=["score-output"],
                 )
 
             with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
-                gr.Markdown("## Speech Feedback")
+                gr.Markdown("## The honest review")
                 feedback_output = gr.Markdown(
-                    value="_Speech feedback will appear here after transcription._",
+                    value="_The honest review will land here once the coach has heard you out._",
                     elem_classes=["score-output"],
                 )
 

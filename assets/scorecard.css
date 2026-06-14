@@ -71,6 +71,18 @@
   text-transform: uppercase;
 }
 
+#hero-panel .hero-rings {
+  display: block;
+  width: clamp(72px, 12vw, 108px);
+  height: auto;
+  margin: 18px 0 4px;
+  color: var(--gold);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 2px 0 rgba(36, 26, 21, 0.18));
+}
+
 #hero-panel h1 {
   color: var(--ink);
   font-size: clamp(2.3rem, 7vw, 5.2rem);
@@ -376,6 +388,57 @@
 
 #status-output p {
   margin: 0;
+}
+
+#confetti-stage {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  visibility: hidden;
+  z-index: 9999;
+}
+
+#confetti-stage.is-bursting {
+  visibility: visible;
+}
+
+#confetti-stage .confetti-piece {
+  position: absolute;
+  top: -8vh;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0;
+  box-shadow: 0 1px 0 rgba(36, 26, 21, 0.18);
+}
+
+#confetti-stage.is-bursting .confetti-piece {
+  animation-name: confetti-fall;
+  animation-timing-function: cubic-bezier(0.25, 0.55, 0.5, 1);
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--drift, 0), 110vh, 0) rotate(720deg);
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #confetti-stage,
+  #confetti-stage.is-bursting {
+    visibility: hidden;
+  }
 }
 
 @media (max-width: 760px) {
