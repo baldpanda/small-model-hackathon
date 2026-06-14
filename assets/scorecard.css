@@ -603,3 +603,99 @@
   font-family: Georgia, "Times New Roman", serif !important;
   color: var(--ink) !important;
 }
+
+/* ============================================================
+   LIVE-DOM FIX PACK
+   Robustness against the running Gradio build (button elem_id on
+   the <button>, dark-theme component chrome, list-shaped review).
+   ============================================================ */
+
+/* --- Buttons: target both id-on-wrapper and id-on-button forms --- */
+#review-button,
+#review-button button {
+  background: var(--burgundy) !important;
+  border: 2px solid #4e1421 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 5px 0 #4e1421 !important;
+  color: #fff9ec !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+}
+#review-button:hover,
+#review-button button:hover { background: #8c3042 !important; }
+
+#try-again-button,
+#try-again-button button {
+  background: transparent !important;
+  border: 2px solid var(--line) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: var(--ink) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+}
+#try-again-button:hover,
+#try-again-button button:hover { background: var(--paper-deep) !important; }
+
+/* --- Lighten component chrome that the dark theme leaves dark --- */
+/* audio player + transcript: kill dark backgrounds on the widget shells,
+   their label bars, toolbars and time readouts. */
+#speech-audio,
+#speech-audio > *,
+#speech-audio .wrap,
+#speech-audio .controls,
+#speech-audio .waveform-container,
+#speech-audio .timestamps,
+#speech-audio .label-wrap,
+#transcript-output .wrap,
+#transcript-output .label-wrap,
+#transcript-output .head {
+  background: #fffbf2 !important;
+  color: var(--ink) !important;
+}
+
+/* component label chips ("Speech recording", "Rehearsal transcript") read as
+   the same green mono labels as everywhere else, not white-on-dark bars. */
+#speech-audio .label-wrap span,
+#speech-audio label,
+#transcript-output .label-wrap span,
+#transcript-output label {
+  background: transparent !important;
+  color: var(--green) !important;
+}
+#speech-audio .timestamps time,
+#speech-audio .timestamps span {
+  color: var(--muted-ink) !important;
+}
+
+/* --- Honest review may render as a <li> list: hand-write it either way --- */
+#review-card .score-output p,
+#review-card .score-output li {
+  font-family: var(--hand) !important;
+  font-size: 1.6rem !important;
+  line-height: 1.3 !important;
+  color: var(--ink) !important;
+}
+#review-card .score-output ul {
+  list-style: none !important;
+  padding-left: 0 !important;
+  margin: 0 !important;
+}
+#review-card .score-output li { margin: 0.1em 0 0.55em !important; }
+#review-card .score-output strong {
+  display: inline !important;
+  font-family: var(--hand) !important;
+  font-size: 1.6rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--burgundy) !important;
+}
+/* the last point reads as the burgundy verdict */
+#review-card .score-output li:last-child,
+#review-card .score-output li:last-child strong,
+#review-card .score-output p:last-of-type {
+  color: var(--burgundy) !important;
+}
