@@ -23,7 +23,12 @@ from rehearsal_limits import (
 )
 from review import review_speech
 from speech_stats import build_transcript_stats
-from timing import get_audio_duration_seconds, summarize_timing
+from timing import (
+    format_pacing_html,
+    format_pacing_preview_html,
+    get_audio_duration_seconds,
+    summarize_timing,
+)
 from transcribe import transcribe_recording
 
 
@@ -287,6 +292,7 @@ def _outputs(
 
 
 def _format_final_outputs(
+    audio_path: str,
     transcript: str,
     feedback: str,
     timing_feedback: str,
@@ -296,7 +302,7 @@ def _format_final_outputs(
 ) -> tuple[str, str, str, str, str]:
     step_started_at = time.perf_counter()
     formatted_feedback = _format_speech_feedback_markdown(feedback)
-    formatted_timing = _format_metric_markdown(timing_feedback)
+    formatted_timing = format_pacing_html(audio_path, transcript)
     formatted_filler = format_filler_chips_html(transcript)
     timer.add_step("formatting", time.perf_counter() - step_started_at)
 
@@ -309,18 +315,6 @@ def _format_final_outputs(
     )
 
 
-def _format_duration_preview(duration_seconds: float) -> str:
-    return _format_metric_markdown(
-        "\n".join(
-            (
-                f"Duration: {duration_seconds:.1f} seconds",
-                "Estimated words: pending until transcription completes",
-                "Estimated pace: pending until transcription completes",
-            )
-        )
-    )
-
-
 @spaces.GPU(duration=_gpu_duration_seconds)
 def _process_valid_rehearsal(
     audio_path: str,
@@ -328,7 +322,7 @@ def _process_valid_rehearsal(
     requested_gpu_seconds: int,
 ) -> Iterator[tuple[str, str, str, str, str]]:
     timer = ProcessingTimer(requested_gpu_seconds=requested_gpu_seconds)
-    timing_preview = _format_duration_preview(duration_seconds)
+    timing_preview = format_pacing_preview_html(duration_seconds)
     yield _outputs(
         "",
         SPEECH_FEEDBACK_PENDING,
@@ -366,7 +360,7 @@ def _process_valid_rehearsal(
         timer,
     )
     timing_feedback = _timed_step(timer, "timing analysis", lambda: _build_timing_feedback(audio_path, transcript))
-    formatted_timing_feedback = _format_metric_markdown(timing_feedback)
+    formatted_timing_feedback = format_pacing_html(audio_path, transcript)
 
     yield _outputs(
         transcript,
@@ -397,6 +391,7 @@ def _process_valid_rehearsal(
         )
     except ValueError as exc:
         yield _format_final_outputs(
+            audio_path,
             transcript,
             str(exc),
             timing_feedback,
@@ -407,6 +402,7 @@ def _process_valid_rehearsal(
         return
     except RuntimeError as exc:
         yield _format_final_outputs(
+            audio_path,
             transcript,
             str(exc),
             timing_feedback,
@@ -417,6 +413,7 @@ def _process_valid_rehearsal(
         return
     except Exception as exc:
         yield _format_final_outputs(
+            audio_path,
             transcript,
             f"Review failed: {exc}",
             timing_feedback,
@@ -427,6 +424,7 @@ def _process_valid_rehearsal(
         return
 
     yield _format_final_outputs(
+        audio_path,
         transcript,
         feedback,
         timing_feedback,
@@ -585,8 +583,8 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
 
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
                 gr.Markdown("## Pacing")
-                timing_output = gr.Markdown(
-                    value="_Pacing notes land here after the recording._",
+                timing_output = gr.HTML(
+                    value='<p class="pace-note">Pacing notes land here after the recording.</p>',
                     elem_id="timing-output",
                     elem_classes=["score-output"],
                 )

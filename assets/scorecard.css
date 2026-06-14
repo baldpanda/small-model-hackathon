@@ -758,3 +758,67 @@
   color: var(--burgundy);
   line-height: 1.1;
 }
+
+/* --- Pacing: stat row + target-band gauge (rendered as HTML) --- */
+.score-output .pace-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+.score-output .pace-stat .num {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink) !important;
+}
+.score-output .pace-stat .num--flag {
+  color: var(--burgundy) !important;
+}
+.score-output .pace-stat .lbl {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-ink) !important;
+  margin-top: 5px;
+}
+.score-output .pace-gauge {
+  position: relative;
+  height: 10px;
+  background: var(--paper-deep);
+  border-radius: 5px;
+  margin: 8px 0 7px;
+}
+.score-output .pace-gauge .band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(24, 61, 52, 0.38);
+  border-radius: 5px;
+}
+.score-output .pace-gauge .marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 16px;
+  background: var(--burgundy);
+  border-radius: 2px;
+}
+.score-output .pace-scale {
+  display: flex;
+  justify-content: space-between;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.64rem;
+  color: var(--muted-ink) !important;
+}
+.score-output .pace-note {
+  margin: 14px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  color: var(--muted-ink) !important;
+  font-style: italic;
+}
+.score-output .pace-note strong {
+  color: var(--burgundy) !important;
+  font-style: normal;
+}
