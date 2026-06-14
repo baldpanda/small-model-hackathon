@@ -62,7 +62,7 @@ python evals/generate_app_reviews_local.py \
 
 This imports `review.review_speech()` from the app code, so it uses the same model ID, prompt templates, generation settings, deterministic stats block, and `enable_thinking=False` behavior as the deployed app review path.
 
-The fixed-shape prompt baseline is tagged as `stats_fixed_scorecard_v2`. The app path applies a narrow scorecard cleaner after generation: it keeps the first valid `Strength`/`Fix 1`/`Fix 2`/`Next run` scorecard and drops extra bullets if the model continues after the next-step line. Eval outputs include `scorecard_shape_valid` and `scorecard_shape_issues`; there is no retry or repair generation pass.
+The adaptive-shape prompt baseline is tagged as `stats_adaptive_scorecard_v3`. Substantive clips use the `Strength`/`Fix 1`/`Fix 2`/`Next run` scorecard. Clips under 50 words or under 20 seconds use the shorter `Strength`/`Fix`/`Next run` scorecard so the model does not force a second fix from thin material. The app path applies a narrow scorecard cleaner after generation and drops extra bullets if the model continues after the next-step line. Eval outputs include `scorecard_shape_valid` and `scorecard_shape_issues`; there is no retry or repair generation pass.
 
 ## Run App Baseline Reviews On Modal
 

@@ -3,9 +3,16 @@ Review this rehearsal using the stats and transcript.
 Stats:
 {{ stats_block }}
 
-Apply the output contract from the system message. Output exactly four hyphen bullets: Strength, Fix 1, Fix 2, Next run. Ground every claim in the transcript or stats.
+Apply the output contract from the system message.
+{% if short_scorecard %}
+Output exactly three hyphen bullets: Strength, Fix, Next run. Ground every claim in the transcript or stats.
+
+Use Fix for the single highest-impact change. Do not output Fix 1 or Fix 2. Do not repeat feedback or restate the same issue in different words.
+{% else %}
+Output exactly four hyphen bullets: Strength, Fix 1, Fix 2, Next run. Ground every claim in the transcript or stats.
 
 Use Fix 1 for content or structure. Use Fix 2 for delivery or stats when pace/fillers are outside the controlled range. Do not repeat feedback or restate the same issue in different words.
+{% endif %}
 
 Transcript:
 {{ transcript }}

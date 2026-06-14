@@ -44,7 +44,7 @@ app = modal.App("speech-feedback-app-baseline-evals")
 @app.function(image=image, gpu=GPU_TYPE, secrets=secrets, timeout=1800)
 def generate_reviews_remote(records: list[dict[str, Any]], include_input: bool = False) -> list[dict[str, Any]]:
     sys.path.insert(0, REMOTE_APP_DIR)
-    from review import PROMPT_VERSION, review_speech, scorecard_shape_issues
+    from review import PROMPT_VERSION, expected_scorecard_labels, review_speech, scorecard_shape_issues
 
     results = []
     total = len(records)
@@ -62,8 +62,12 @@ def generate_reviews_remote(records: list[dict[str, Any]], include_input: bool =
             "stats": record["stats"],
         }
         try:
+            scorecard_labels = expected_scorecard_labels(transcript, record["stats"])
             result["review"] = review_speech(transcript, stats=record["stats"])
-            result["scorecard_shape_issues"] = scorecard_shape_issues(result["review"])
+            result["scorecard_shape_issues"] = scorecard_shape_issues(
+                result["review"],
+                expected_labels=scorecard_labels,
+            )
             result["scorecard_shape_valid"] = not result["scorecard_shape_issues"]
         except Exception as exc:  # noqa: BLE001 - eval rows should capture failures and continue.
             result["error_type"] = type(exc).__name__
