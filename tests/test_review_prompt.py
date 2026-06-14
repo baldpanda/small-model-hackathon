@@ -91,7 +91,9 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn("Toastmasters role such as grammarian", messages[0]["content"])
         self.assertIn("A slow pace under 120 wpm is worth addressing", messages[0]["content"])
         self.assertIn("Do not make both fixes about the same example", messages[0]["content"])
+        self.assertIn("Do not repeat feedback in different words", messages[0]["content"])
         self.assertIn("Use Fix 2 for delivery or stats", messages[1]["content"])
+        self.assertIn("Do not repeat feedback", messages[1]["content"])
         self.assertIn("- Pace: 97.4 wpm (slow (<120))", messages[1]["content"])
 
     def test_clean_review_output_stops_after_first_next_run(self) -> None:
