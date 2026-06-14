@@ -55,9 +55,9 @@ def _build_confetti_html() -> str:
 
 
 HERO_RINGS_SVG = (
-    '<svg class="hero-rings" viewBox="0 0 96 40" aria-hidden="true">'
-    '<circle cx="34" cy="20" r="14"/>'
-    '<circle cx="62" cy="20" r="14"/>'
+    '<svg class="hero-rings" viewBox="0 0 80 36" aria-hidden="true">'
+    '<circle class="hero-rings__left" cx="28" cy="18" r="15"/>'
+    '<circle class="hero-rings__right" cx="52" cy="18" r="15"/>'
     "</svg>"
 )
 
@@ -503,10 +503,10 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
               {HERO_RINGS_SVG}
               <h1>Best Man Speech Coach</h1>
               <p>
-                Record a quick run-through and we'll pour you an honest read of the toast:
-                transcript, pacing, crutch words, and a coach's note before you raise your glass.
+                Two minutes at the mic and you'll get the toast back as a transcript,
+                with pacing, crutch words, and a coach's honest note attached.
               </p>
-              <div class="stamp">Glass raised, ready when you are</div>
+              <div class="stamp">A two-minute rehearsal coach</div>
             </section>
             """
         )
