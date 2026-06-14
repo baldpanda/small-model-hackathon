@@ -73,14 +73,20 @@
 
 #hero-panel .hero-rings {
   display: block;
-  width: clamp(72px, 12vw, 108px);
+  width: clamp(84px, 13vw, 120px);
   height: auto;
-  margin: 18px 0 4px;
-  color: var(--gold);
+  margin: 20px 0 6px;
   fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
-  filter: drop-shadow(0 2px 0 rgba(36, 26, 21, 0.18));
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+
+#hero-panel .hero-rings__left {
+  stroke: var(--burgundy);
+}
+
+#hero-panel .hero-rings__right {
+  stroke: var(--gold);
 }
 
 #hero-panel h1 {
