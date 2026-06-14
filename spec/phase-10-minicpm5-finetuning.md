@@ -37,9 +37,9 @@ Phase 10 includes:
 - using `evals/speech-feedback-coaching-rubric.md` as the rubric source of truth
 - using transcript plus deterministic stats as the fine-tuning and evaluation input
 - hand-writing private held-out evaluation transcripts
-- running the existing `review_speech(transcript: str) -> str` path as the baseline
+- running the existing transcript-only `review_speech` path as the initial baseline
 - evaluating with `openbmb/MiniCPM5-1B` and thinking mode off
-- optimizing the existing prompt templates before fine-tuning
+- optimizing the existing prompt templates before fine-tuning, including passing deterministic stats into the prompt
 - generating about 130 private synthetic chat-format SFT examples locally
 - validating generated examples before training
 - fine-tuning a LoRA adapter on Modal
@@ -51,7 +51,6 @@ Phase 10 does not include:
 - committing raw transcripts or generated training data
 - uploading a public dataset
 - wiring the LoRA adapter into `app.py`
-- changing the live Hugging Face Space behavior
 - full-model fine-tuning
 - DPO, RLHF, GRPO, or preference training
 - changing the transcription model
@@ -73,6 +72,11 @@ Required inference behavior:
 - keep output concise and user-facing
 - do not expose reasoning traces
 - train and evaluate against the compact scorecard output contract in `evals/speech-feedback-coaching-rubric.md`
+- use the fixed four-line app-facing scorecard shape: `Strength`, `Fix 1`, `Fix 2`, `Next run`
+- use `Fix 1` for the highest-impact content or structure change
+- use `Fix 2` for the highest-impact delivery or stats-based change, or proportionate polish when stats are already controlled
+- keep generation conservative for schema adherence (`temperature=0.1` in the current app path)
+- record scorecard-shape validity during evals, but do not spend a second GPU call on retry or repair generation
 
 Thinking mode should stay off because this workflow needs direct coaching output, not visible reasoning. The fine-tuned adapter should learn the final feedback style, not chain-of-thought or hidden deliberation.
 
@@ -83,6 +87,15 @@ The rubric source of truth is `evals/speech-feedback-coaching-rubric.md`.
 The rubric uses 0/1/2 scoring across dimensions for context tailoring, content specificity, structural insight, voice and humor preservation, emotional or occasion turn, delivery and stats translation, proportionality, earned opening strength, actionable next step, and no invented details.
 
 The rubric also defines hard gates for material hallucination, reasoning traces, full-speech rewriting, generic wedding advice on non-wedding transcripts, too many fixes, missing next step, and ignoring relevant stats.
+
+The current prompt-tightening pass standardizes the app-facing scorecard to exactly four hyphen bullets:
+
+1. `Strength:` one earned transcript-specific strength.
+2. `Fix 1:` the highest-impact content or structure change.
+3. `Fix 2:` the highest-impact delivery or stats-based change.
+4. `Next run:` one concrete rehearsable action.
+
+This is an inference-side stabilization pass. It does not require retraining by itself, and it intentionally does not add retry behavior because a second generation would increase GPU work.
 
 ## Evaluation Workflow
 
@@ -100,11 +113,11 @@ The held-out set should include:
 
 Evaluation steps:
 
-1. Run held-out transcripts through the current `review_speech` path as the current app baseline.
+1. Run held-out transcripts through the current transcript-only `review_speech` path as the initial app baseline.
 2. Score each output with the rubric and record failure modes.
 3. Optimize the existing prompt templates.
-4. Freeze the best prompt baseline.
-5. Run the same held-out transcripts through the optimized prompt baseline.
+4. Freeze the best prompt baseline, including any narrow output-shape guardrail that is part of the app path.
+5. Run the same held-out transcript-plus-stats examples through the optimized prompt baseline.
 6. Train the LoRA adapter.
 7. Run the same held-out transcript-plus-stats examples through the adapter with `enable_thinking=False`.
 8. Compare current baseline, optimized prompt baseline, and LoRA adapter outputs.
@@ -118,6 +131,8 @@ Synthetic data generation should happen locally and privately, not in Codex Clou
 Target dataset:
 
 - about 130 accepted chat-format SFT examples
+- source CSV: `evals/data/master_transcripts_gold.csv`
+- joined private stats CSV: `evals/private/master_transcript_stats.csv`
 - JSONL format
 - each row has a stable example ID, category metadata, and `messages`
 - each `messages` value contains `system`, `user`, and `assistant` messages
@@ -150,6 +165,8 @@ Generated examples should be validated for:
 
 Raw generated JSONL should remain in an ignored private data directory. Only reusable schemas, generation prompts, validation scripts, and sanitized fixtures should be committed if needed.
 
+The gold examples are split deterministically into 104 training rows and 26 validation rows, stratified by speech type and quality. The 15-row held-out eval set remains separate and is used only for baseline vs adapter comparison.
+
 ## Modal Finetuning
 
 Training should run on Modal, not in the Hugging Face Space.
@@ -176,7 +193,8 @@ Modal expectations:
 - use a Modal GPU function for training
 - use Modal Secrets for Hugging Face access if needed
 - use Modal Volumes for training data copies, checkpoints, logs, and adapter artifacts
-- run a tiny smoke training job before the full run
+- run a tiny 8-example smoke training job before the full run
+- use validation loss on the 26-row validation split as a training sanity check
 - persist the final adapter as PEFT files such as `adapter_model.safetensors` and `adapter_config.json`
 
 Merging the adapter into a full model is optional and not required for this phase.
@@ -225,12 +243,12 @@ Use sanitized examples only when a committed fixture is necessary for scripts or
 10. Run the full Modal LoRA training job.
 11. Evaluate the adapter with thinking mode off.
 12. Summarize whether the adapter should be considered for a later app-integration phase.
+13. If adapter output shape remains unreliable, normalize future gold examples to the fixed four-line contract before any retraining run.
 
 ## Open Questions
 
 - What is the smallest held-out evaluation set that is still useful for this hackathon timeline?
 - Should the adapter evaluation use only human rubric scores, or also a structured model-assisted judge after manual spot checks?
-- Should generated training examples require four bullets exactly, or allow a small number of tight one-paragraph scorecards?
 - Which Modal GPU offers the best cost and latency tradeoff for a small MiniCPM5 LoRA run?
 
 ## Definition of Done

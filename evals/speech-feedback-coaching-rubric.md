@@ -23,21 +23,20 @@ A valid scorecard must follow this shape:
 - no headers
 - no preamble
 - no closing reassurance
-- 80-140 words by default
+- exactly four hyphen bullets
+- 70-120 words by default
 - one specific opening strength
-- two prioritized fixes
+- two fixed prioritized fixes
 - one concrete next rehearsal step
 
-Gold examples should use exactly four short bullets for consistency. One tight paragraph is acceptable only for exploratory prompt tests, not for SFT targets or held-out scoring fixtures.
+The app-facing scorecard should use this exact label order:
 
-Scorecard order:
+1. `Strength:` one earned transcript-specific strength.
+2. `Fix 1:` the highest-impact content or structure change.
+3. `Fix 2:` the highest-impact delivery or stats-based change. If delivery stats are already controlled, use this for proportionate polish without inventing a problem.
+4. `Next run:` one concrete rehearsable action.
 
-1. Earned strength.
-2. Highest-priority fix.
-3. Second fix.
-4. Next rehearsal step.
-
-Use a fifth bullet only when the input is unusually long or complex and a third fix is genuinely higher value than keeping the scorecard tight. For normal short rehearsals, more than two fixes is a shape failure.
+This fixed shape is deliberately stricter than earlier gold drafts. It is meant to improve small-model reliability and make missing fields obvious during evals.
 
 ## Taste Profile
 
@@ -49,7 +48,7 @@ The feedback should be direct, concise, and specific.
 - Do not sanitize best-man humor into generic professional speaking.
 - Protect the sincere emotional turn in wedding and celebration speeches.
 - Match the feedback depth to the speech length and stakes.
-- Pick the two fixes that matter most; use a third only for unusually long or complex inputs.
+- Pick the two fixes that matter most.
 - Translate stats into actions, not recitations.
 - Never invent transcript details, stats, emotions, or audience reactions.
 
@@ -57,21 +56,19 @@ Affectionate edge is good. Cruel, confusing, or alienating material should be re
 
 ## Scoring Protocol
 
-Score each dimension as 0, 1, or 2. The short scale below is orientation only; the per-dimension anchors are authoritative.
+Score each dimension as 0, 1, or 2.
 
-- 0: absent, wrong, or generic for that dimension
+- 0: absent, wrong, generic, or actively harmful
 - 1: partially right but vague, shallow, or inconsistent
 - 2: specific, grounded, useful, and aligned with the taste profile
 
-Reserve harmful or unusable behavior for the hard gates unless a dimension anchor explicitly captures it.
+Anchors illustrate the kind of judgment each level shows; they do not enumerate approved notes. A generic move with transcript-specific nouns dropped in still caps at 1. The jump to 2 is reasoning about why the note helps *this* speech, not the move itself. (Example: "open with your strongest story" is a 1 even when it names the real story; the 2 explains why the reorder serves this speech's logic.)
 
 Use N/A only when a dimension is genuinely irrelevant to the speech type. Do not mark a dimension N/A merely because the transcript is short. Short speeches can still have context, structure, delivery, and next-step quality, just at a smaller scale.
 
 Every N/A should include a one-line justification in eval notes.
 
 For base vs. fine-tuned comparison, report per-dimension deltas as well as the total. The most important deltas are likely to appear in content specificity, voice and humor, emotional turn, delivery/stats translation, and no invented details.
-
-Treat aggregate score as a secondary summary. Context tailoring, content specificity, and structural insight are intentionally correlated because transcript grounding is central to the product taste, so the total can overstate a single grounding improvement. Use per-dimension deltas and hard-gate rates as the main readout.
 
 Default weighting is equal. If weighting is needed, use 1.5x for:
 
@@ -83,21 +80,19 @@ Default weighting is equal. If weighting is needed, use 1.5x for:
 
 ## Hard Gates
 
-Hard gates are output-level pass/fail checks. They answer whether the scorecard is usable at all. Dimension scores answer how good the scorecard is on specific qualities.
-
 These failures should fail the whole output even if some dimensions score well:
 
 - invents a story, relationship, venue, name, date, audience reaction, or stat
+- asserts local delivery the input cannot show (claims a line was rushed, paused, stressed, or that a joke "landed") rather than giving it as prospective advice
 - exposes reasoning traces or thinking-mode content
 - rewrites the full speech by default
 - gives generic wedding advice to a clearly non-wedding transcript
-- produces more than two fixes for a normal short rehearsal
+- misses the exact four-bullet scorecard shape
+- produces more than two fixes for a normal rehearsal
 - omits the concrete next rehearsal step
 - ignores the stats block entirely when stats are present and relevant
 
-Report hard-gate rate as a headline metric, separate from mean dimension score. For primary base-vs-fine-tuned comparison, compute mean dimension score on passing outputs only. Gated outputs may still be scored diagnostically, but those diagnostic scores should not be mixed into the primary quality mean.
-
-Some gates overlap with dimensions on purpose. For example, invented details also score poorly on No Invented Details, and generic wedding advice may score poorly on Context Tailoring. The gate is the usability decision; the dimension score is the diagnostic explanation.
+Hard gates are output-level pass/fail and are tracked separately from dimension scores. Record the hard-gate failure rate as its own headline metric; do not let a gated output silently average into the per-dimension means. Decide once, and apply consistently, whether gated outputs are excluded from dimension averaging or scored zero across the board.
 
 ## Stats Interpretation
 
@@ -166,10 +161,10 @@ Feedback engages with how this speech is actually built.
 | Score | Anchor | Example |
 |---|---|---|
 | 0 | Ignores structure. | Delivery-only feedback. |
-| 1 | Gives generic structure advice. | "Make sure you have a strong opening and closing." |
-| 2 | Identifies the real arc and a concrete structural move. | "Open with the camping story, then let the cooking jokes lead into the sincere closing beat." |
+| 1 | Gives generic structure advice, or a formulaic move with the real story's name dropped in. | "Make sure you have a strong opening and closing," or "open with your strongest story" stated as a blanket move. |
+| 2 | Identifies the real arc and explains why a concrete move serves this speech. | "You announce 'most loyal friend' and then prove it; let the camping story land first so the claim is earned rather than asserted," or "you have three separate endings; pick the toast and cut the other two." |
 
-Failure modes: intro-body-conclusion boilerplate, over-structuring an intentionally loose toast, missing multiple endings.
+Failure modes: intro-body-conclusion boilerplate, over-structuring an intentionally loose toast, missing multiple endings, prescribing a relocation without saying why it helps this speech.
 
 ### 4. Voice and Humor Preservation
 
@@ -207,6 +202,8 @@ Feedback reads the stats correctly and turns them into a specific action.
 
 Failure modes: reciting stats without coaching, inventing stats, treating every filler count as equally important.
 
+Grounding constraint: the input is text plus aggregate stats, and a transcript contains no timing. Delivery feedback may rest only on the global stats (overall wpm, filler rate, duration) and the words themselves, plus forward-looking suggestions. It must not assert local delivery — that a specific line was rushed, paused, stressed, or that a joke "landed." Overall wpm supports "you are fast across the whole speech"; it does not support "you rushed this line," because wpm is an average. Pace and pauses are legitimate as prospective advice grounded in the text ("when you deliver this, pause before the sincere turn"), never as observations of how the recording sounded. A retrospective delivery claim the input cannot support is an invented detail and scores 0 here as well as triggering the invention gate.
+
 ### 7. Proportionality and Restraint
 
 Feedback matches the speech's length, stakes, and maturity.
@@ -215,7 +212,7 @@ Feedback matches the speech's length, stakes, and maturity.
 |---|---|---|
 | 0 | Wildly mis-scaled. | Ten notes on a 40-second toast. |
 | 1 | Reasonable length but unprioritized. | Five equal-weight issues with no ranking. |
-| 2 | Two or three prioritized fixes scaled to the occasion. | "Two things matter: open with the camping story, then pause before the sincere turn." |
+| 2 | Two prioritized fixes scaled to the occasion. | "Two things matter: open with the camping story, then pause before the sincere turn." |
 
 Failure modes: over-coaching short pieces, laundry lists, padding, failing to rank.
 
@@ -268,5 +265,6 @@ Gold examples should:
 - include short and functional speeches where proportionality matters
 - preserve affectionate humor while redirecting genuinely harmful or confusing jokes
 - show the emotional turn for wedding, best-man, and celebration speeches
+- give structural notes that justify the move for this speech, not formulaic relocations
 
 For evaluator calibration, keep separate non-training examples of weak and medium model outputs so scorers agree on what 0 and 1 look like.
