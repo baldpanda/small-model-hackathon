@@ -353,6 +353,10 @@ def _clear_outputs(status: str) -> tuple[str, str, str, str, str]:
     return "", "", "", "", status
 
 
+def _reset_rehearsal() -> tuple[None, str, str, str, str, str]:
+    return (None, *_clear_outputs("Ready to record."))
+
+
 def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
     if not audio_path:
         yield _clear_outputs(f"Record a speech first. The app accepts recordings from {RECORDING_WINDOW_LABEL}.")
@@ -445,16 +449,26 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     type="filepath",
                     label="Speech recording",
                     elem_id="speech-audio",
+                    editable=False,
+                    buttons=[],
                 )
                 countdown = gr.HTML(
                     f"<div id='recording-status'>Recording limit: {_format_clock_seconds(MAX_RECORDING_SECONDS)}</div>",
                     label="Recording timer",
                 )
-                transcribe_button = gr.Button(
-                    "Review speech",
-                    variant="primary",
-                    elem_id="review-button",
-                )
+                with gr.Row(elem_id="rehearsal-actions"):
+                    transcribe_button = gr.Button(
+                        "Review speech",
+                        variant="primary",
+                        elem_id="review-button",
+                        scale=3,
+                    )
+                    try_again_button = gr.Button(
+                        "Try again",
+                        variant="secondary",
+                        elem_id="try-again-button",
+                        scale=1,
+                    )
 
             with gr.Column(scale=5, elem_classes=["scorecard-card"]):
                 gr.Markdown("## Scorecard Status")
@@ -500,6 +514,19 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             fn=process_rehearsal,
             inputs=audio_input,
             outputs=[transcript_output, feedback_output, timing_output, filler_output, status_output],
+        )
+
+        try_again_button.click(
+            fn=_reset_rehearsal,
+            inputs=None,
+            outputs=[
+                audio_input,
+                transcript_output,
+                feedback_output,
+                timing_output,
+                filler_output,
+                status_output,
+            ],
         )
 
 
