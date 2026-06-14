@@ -614,18 +614,24 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             fn=None,
             inputs=None,
             outputs=transcribe_button,
-            js="() => ({ __type__: 'update', interactive: true })",
+            js="() => ({ __type__: 'update', interactive: true, value: 'Review speech' })",
         )
 
         audio_input.clear(
             fn=None,
             inputs=None,
             outputs=transcribe_button,
-            js="() => ({ __type__: 'update', interactive: false })",
+            js="() => ({ __type__: 'update', interactive: false, value: 'Review speech' })",
         )
 
         audio_input.start_recording(
-            fn=lambda: gr.update(interactive=False),
+            fn=lambda: gr.update(interactive=False, value="Review speech"),
+            inputs=None,
+            outputs=transcribe_button,
+        )
+
+        audio_input.stop_recording(
+            fn=lambda: gr.update(interactive=False, value="Uploading recording…"),
             inputs=None,
             outputs=transcribe_button,
         )
@@ -642,7 +648,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                 status_output,
             ],
         ).then(
-            fn=lambda: gr.update(interactive=False),
+            fn=lambda: gr.update(interactive=False, value="Review speech"),
             inputs=None,
             outputs=transcribe_button,
         )
