@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap');
+
 :root {
   --paper: #f7f0e3;
   --paper-deep: #eee2cd;
@@ -469,4 +471,88 @@
   #rehearsal-actions {
     flex-direction: column;
   }
+}
+
+/* ============================================================
+   CUE CARD SYSTEM
+   Ruled index cards + a handwritten coach. Additive overrides —
+   everything below wins by source order, so the base styles above
+   stay intact. Two touched surfaces: the hero and the honest review.
+   ============================================================ */
+
+:root {
+  --hand: "Caveat", "Segoe Script", cursive;
+  --rule: rgba(24, 61, 52, 0.10);     /* faint ruled lines */
+  --margin-rule: var(--burgundy);      /* the red margin line */
+}
+
+/* ---- Hero: a tabbed, ruled index card ---- */
+#hero-panel {
+  background-color: #fffbf2 !important;
+  background-image:
+    linear-gradient(90deg, transparent 0 52px, var(--margin-rule) 52px, var(--margin-rule) 54px, transparent 54px),
+    repeating-linear-gradient(#fffbf2 0, #fffbf2 35px, var(--rule) 35px, var(--rule) 36px) !important;
+  padding-left: clamp(70px, 8vw, 90px) !important;
+}
+
+/* drop the dashed-gold rails + ring doodle in favour of ruled lines */
+#hero-panel::before,
+#hero-panel::after { display: none !important; }
+#hero-panel .hero-rings { display: none !important; }
+
+/* the kicker becomes a green file tab clipped to the top edge */
+#hero-panel .kicker {
+  position: absolute;
+  top: -14px;
+  left: 64px;
+  background: var(--green);
+  color: #fff9ec !important;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  padding: 6px 15px;
+  border-radius: 6px 6px 0 0;
+  box-shadow: 0 3px 8px rgba(36, 26, 21, 0.18);
+}
+
+/* ---- The honest review: the coach's handwritten note ---- */
+#review-card {
+  background-color: #fffbf2 !important;
+  background-image:
+    linear-gradient(90deg, transparent 0 52px, var(--margin-rule) 52px, var(--margin-rule) 54px, transparent 54px),
+    repeating-linear-gradient(#fffbf2 0, #fffbf2 36px, rgba(122, 38, 54, 0.08) 36px, rgba(122, 38, 54, 0.08) 37px) !important;
+  padding-left: clamp(68px, 7vw, 84px) !important;
+}
+
+#review-card .score-output {
+  background: transparent !important;
+  border: none !important;
+  padding: 4px 0 0 !important;
+}
+
+/* body lines in the coach's hand */
+#review-card .score-output p {
+  font-family: var(--hand) !important;
+  font-size: 1.7rem !important;
+  line-height: 1.3 !important;
+  color: var(--ink) !important;
+  margin: 0.1em 0 0.55em !important;
+}
+
+/* the section labels (What worked / What to sharpen / ...) stay as
+   small typeset mono headers, set off from the handwriting */
+#review-card .score-output strong {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--green) !important;
+  margin-top: 0.7em;
+}
+
+/* let the closing "Bottom line" read in burgundy as the verdict */
+#review-card .score-output p:last-of-type {
+  color: var(--burgundy) !important;
+  font-size: 1.85rem !important;
 }
