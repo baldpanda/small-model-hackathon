@@ -202,8 +202,97 @@
 
 #speech-audio [aria-label*="Record"],
 #speech-audio button:has(.record) {
-  color: var(--burgundy) !important;
+  background: var(--paper-deep) !important;
+  border: 3px solid var(--gold) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 4px 0 rgba(191, 138, 58, 0.55) !important;
+  color: var(--ink) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.06em !important;
+  min-height: 56px;
+  padding: 8px 22px !important;
+  text-transform: uppercase;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+#speech-audio [aria-label*="Record"]:hover,
+#speech-audio button:has(.record):hover {
+  background: #f3e0bd !important;
+  transform: translateY(-1px);
+}
+
+#speech-audio [aria-label*="Record"] .record,
+#speech-audio button:has(.record) .record,
+#speech-audio [aria-label*="Record"] svg circle {
+  fill: #c0392b !important;
+  color: #c0392b !important;
+  animation: rehearsal-record-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes rehearsal-record-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.18); }
+}
+
+#speech-audio [aria-label*="Stop"] {
+  background: var(--green) !important;
+  border: 3px solid var(--gold) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 4px 0 rgba(15, 40, 32, 0.6) !important;
+  color: #fff9ec !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.06em !important;
+  min-height: 56px;
+  padding: 8px 22px !important;
+  text-transform: uppercase;
+}
+
+#speech-audio [aria-label*="Stop"]:hover {
+  background: #20503f !important;
+}
+
+#speech-audio [aria-label*="Clear"],
+#speech-audio [aria-label*="Remove"],
+#speech-audio [aria-label*="Download"],
+#speech-audio [aria-label*="Share"],
+#speech-audio [aria-label*="Trim"],
+#speech-audio [aria-label*="Skip"],
+#speech-audio .trim,
+#speech-audio .waveform-controls,
+#speech-audio .controls > button[aria-label*="forward"],
+#speech-audio .controls > button[aria-label*="back"] {
+  display: none !important;
+}
+
+#rehearsal-actions {
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+#try-again-button button {
+  background: transparent !important;
+  border: 2px solid var(--line) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  color: var(--ink) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-weight: 800 !important;
+  letter-spacing: 0.04em;
+  min-height: 48px;
+  text-transform: uppercase;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+#try-again-button button:hover {
+  background: var(--paper-deep) !important;
+  transform: translateY(-1px);
+}
+
+#try-again-button button:active {
+  transform: translateY(1px);
 }
 
 #wedding-app textarea,
@@ -301,5 +390,9 @@
 
   .scorecard-card {
     padding: 16px;
+  }
+
+  #rehearsal-actions {
+    flex-direction: column;
   }
 }

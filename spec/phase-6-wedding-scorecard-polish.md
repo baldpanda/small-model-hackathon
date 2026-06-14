@@ -49,6 +49,12 @@ Required behavior:
 - The UI should look substantially different from default Gradio components.
 - The layout should remain readable on desktop and mobile widths.
 
+### Rehearsal Booth recording controls
+
+- The Record control is visually distinct from the Review speech button — a different colour family and silhouette — so the input action and the commit action do not compete for attention.
+- Post-recording editing controls (waveform trim, download, clear-X) are hidden. The user either commits the take with Review speech or starts over with Try again; there is no in-between editing step.
+- A Try again button sits alongside Review speech. Activating it clears the current recording and resets the transcript, speech feedback, timing feedback, filler feedback, and status panels to their initial placeholder state so the user can record again immediately.
+
 ## Acceptance Criteria
 
 - Existing timing and filler tests still pass.
