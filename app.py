@@ -428,10 +428,6 @@ def _reset_rehearsal() -> tuple[None, str, str, str, str, str]:
     return (None, *_clear_outputs("Glass raised — ready when you are."))
 
 
-def _review_button_state(audio_path: str | None):
-    return gr.update(interactive=bool(audio_path))
-
-
 def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
     if not audio_path:
         yield _clear_outputs(f"Record a speech first. We accept run-throughs from {RECORDING_WINDOW_LABEL}.")
@@ -595,9 +591,17 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
         )
 
         audio_input.change(
-            fn=_review_button_state,
-            inputs=audio_input,
+            fn=None,
+            inputs=None,
             outputs=transcribe_button,
+            js="() => ({ __type__: 'update', interactive: true })",
+        )
+
+        audio_input.clear(
+            fn=None,
+            inputs=None,
+            outputs=transcribe_button,
+            js="() => ({ __type__: 'update', interactive: false })",
         )
 
         audio_input.start_recording(
@@ -617,6 +621,10 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                 filler_output,
                 status_output,
             ],
+        ).then(
+            fn=lambda: gr.update(interactive=False),
+            inputs=None,
+            outputs=transcribe_button,
         )
 
 
