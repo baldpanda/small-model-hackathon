@@ -82,6 +82,18 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn('"- Strength:", "- Fix 1:", "- Fix 2:", "- Next run:"', messages[0]["content"])
         self.assertIn("Output exactly four hyphen bullets", messages[1]["content"])
 
+    def test_build_messages_instructs_stats_and_functional_role_use(self) -> None:
+        messages = _build_messages(
+            "Good evening, fellow Toastmasters. Tonight I'm the grammarian.",
+            {"wpm": 97.4, "wpm_band": "slow (<120)", "filler_count": 0, "filler_band": "low (0-1/min)"},
+        )
+
+        self.assertIn("Toastmasters role such as grammarian", messages[0]["content"])
+        self.assertIn("A slow pace under 120 wpm is worth addressing", messages[0]["content"])
+        self.assertIn("Do not make both fixes about the same example", messages[0]["content"])
+        self.assertIn("Use Fix 2 for delivery or stats", messages[1]["content"])
+        self.assertIn("- Pace: 97.4 wpm (slow (<120))", messages[1]["content"])
+
     def test_clean_review_output_stops_after_first_next_run(self) -> None:
         cleaned = clean_review_output(
             "\n".join(
