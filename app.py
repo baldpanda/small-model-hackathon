@@ -194,6 +194,18 @@ COUNTDOWN_HEAD = f"""
 </script>
 """
 
+COUNTDOWN_HEAD += """
+<script>
+  (() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("__theme") !== "light") {
+      url.searchParams.set("__theme", "light");
+      window.location.replace(url.toString());
+    }
+  })();
+</script>
+"""
+
 CUSTOM_CSS = (APP_DIR / "assets" / "scorecard.css").read_text()
 
 SPEECH_FEEDBACK_SECTIONS = (
@@ -524,6 +536,11 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     elem_id="speech-audio",
                     editable=False,
                     buttons=[],
+                    waveform_options=gr.WaveformOptions(
+                        waveform_color="#bf8a3a",
+                        waveform_progress_color="#7a2636",
+                        show_controls=False,
+                    ),
                 )
                 countdown = gr.HTML(
                     f"<div id='recording-status'>Recording limit: {_format_clock_seconds(MAX_RECORDING_SECONDS)}</div>",
