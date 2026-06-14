@@ -118,3 +118,37 @@ def format_filler_chips_html(transcript: str) -> str:
         note = f"Swap repeated &lsquo;{html.escape(top_filler)}&rsquo; moments for a short pause."
 
     return f'<div class="chip-row">{"".join(chips)}</div><p class="chip-note">{note}</p>'
+
+
+_HIGHLIGHT_RE = re.compile(
+    r"\b("
+    + "|".join(
+        re.escape(filler).replace(r"\ ", r"\W+")
+        for filler in sorted(FILLERS, key=lambda f: -len(f))
+    )
+    + r")\b",
+    re.IGNORECASE,
+)
+
+_TRANSCRIPT_EMPTY = (
+    '<div class="transcript-paper transcript-paper--empty">'
+    "Your transcript will land here once we've heard the recording."
+    "</div>"
+)
+
+
+def highlight_fillers_html(transcript: str) -> str:
+    """Render the transcript with each tracked filler ringed."""
+    if not transcript or not transcript.strip():
+        return _TRANSCRIPT_EMPTY
+
+    out: list[str] = []
+    last = 0
+    for match in _HIGHLIGHT_RE.finditer(transcript):
+        out.append(html.escape(transcript[last:match.start()]))
+        out.append(f'<span class="circled">{html.escape(match.group(0))}</span>')
+        last = match.end()
+    out.append(html.escape(transcript[last:]))
+
+    body = "".join(out).replace("\n", "<br>")
+    return f'<div class="transcript-paper">{body}</div>'
