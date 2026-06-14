@@ -126,14 +126,19 @@
 }
 
 #recording-status {
-  background: var(--green);
-  border: 2px solid var(--gold);
-  border-radius: 8px;
-  color: #fff9ec;
+  background: transparent;
+  border: none;
+  border-top: 2px dashed var(--gold);
+  border-bottom: 2px dashed var(--gold);
+  border-radius: 0;
+  color: var(--green);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 800;
-  padding: 12px 14px;
+  letter-spacing: 0.08em;
+  margin: 4px 0;
+  padding: 10px 6px;
+  text-align: center;
   text-transform: uppercase;
 }
 
