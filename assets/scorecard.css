@@ -558,3 +558,48 @@
   color: var(--burgundy) !important;
   font-size: 1.85rem !important;
 }
+
+/* ---- Full page: unified card labels + lined transcript ---- */
+
+/* every scorecard is a positioned card so labels/tabs can anchor to it */
+.scorecard-card {
+  position: relative;
+}
+
+/* section headings across the page read as small typeset card labels */
+.scorecard-card h2 {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  color: var(--burgundy) !important;
+  margin: 0 0 12px !important;
+}
+
+/* the honest-review heading echoes the hero tab, in burgundy */
+#review-card h2 {
+  display: inline-block;
+  background: var(--burgundy);
+  color: #fff9ec !important;
+  border-radius: 6px;
+  padding: 6px 14px !important;
+  margin: 0 0 16px !important;
+  box-shadow: 0 3px 8px rgba(36, 26, 21, 0.18);
+}
+
+/* transcript: written on lined paper, with its own burgundy margin rule.
+   background-attachment:local keeps the ruling locked to the text as it
+   scrolls. If the first line sits a hair off the rule, nudge padding-top
+   by 1-2px. */
+#transcript-output textarea {
+  background-color: #fffbf2 !important;
+  background-image:
+    linear-gradient(90deg, transparent 0 30px, var(--burgundy) 30px, var(--burgundy) 32px, transparent 32px),
+    repeating-linear-gradient(#fffbf2 0, #fffbf2 27px, var(--rule) 27px, var(--rule) 28px) !important;
+  background-attachment: local !important;
+  line-height: 28px !important;
+  padding: 8px 14px 14px 44px !important;
+  font-family: Georgia, "Times New Roman", serif !important;
+  color: var(--ink) !important;
+}
