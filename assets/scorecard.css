@@ -493,6 +493,8 @@
     linear-gradient(90deg, transparent 0 52px, var(--margin-rule) 52px, var(--margin-rule) 54px, transparent 54px),
     repeating-linear-gradient(#fffbf2 0, #fffbf2 35px, var(--rule) 35px, var(--rule) 36px) !important;
   padding-left: clamp(70px, 8vw, 90px) !important;
+  overflow: visible !important;
+  margin-top: 14px;
 }
 
 /* drop the dashed-gold rails + ring doodle in favour of ruled lines */
