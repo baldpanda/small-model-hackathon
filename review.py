@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+import re
 import time
 from collections.abc import Mapping
 from functools import lru_cache
@@ -14,14 +15,20 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 MODEL_ID = "openbmb/MiniCPM5-1B"
 ADAPTER_ID_ENV = "REVIEW_ADAPTER_ID"
 PROMPT_LOG_ENV = "REVIEW_LOG_PROMPT"
-PROMPT_VERSION = "stats_fixed_scorecard_v2"
+PROMPT_VERSION = "stats_adaptive_scorecard_v3"
 MAX_REVIEW_TOKENS = 260
 PROMPTS_DIR = Path(__file__).with_name("prompts")
 SCORECARD_LABELS = ("Strength", "Fix 1", "Fix 2", "Next run")
-ALLOWED_SCORECARD_LABELS = {label.lower() for label in SCORECARD_LABELS}
+SHORT_SCORECARD_LABELS = ("Strength", "Fix", "Next run")
+ALL_SCORECARD_LABELS = tuple(dict.fromkeys((*SCORECARD_LABELS, *SHORT_SCORECARD_LABELS)))
+ALLOWED_SCORECARD_LABELS = {label.lower() for label in ALL_SCORECARD_LABELS}
 GENERIC_FIX_LABELS = {"fix", "polish"}
+SHORT_SCORECARD_MAX_WORDS = 50
+SHORT_SCORECARD_MAX_DURATION_SECONDS = 20
 
 LOGGER = logging.getLogger(__name__)
+THINK_BLOCK_PATTERN = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
+THINK_TAG_PATTERN = re.compile(r"</?think\b[^>]*>", re.IGNORECASE)
 
 
 def _get_hugging_face_token() -> str | None:
@@ -190,9 +197,54 @@ def _format_decimal(value: Any) -> str:
     return f"{number:.1f}"
 
 
-def clean_review_output(review: str) -> str:
+def expected_scorecard_labels(
+    transcript: str,
+    stats: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
+    if _should_use_short_scorecard(transcript, stats):
+        return SHORT_SCORECARD_LABELS
+    return SCORECARD_LABELS
+
+
+def _should_use_short_scorecard(transcript: str, stats: Mapping[str, Any] | None = None) -> bool:
+    word_count = _stats_int(stats, "word_count")
+    duration_seconds = _stats_float(stats, "duration_seconds")
+    if word_count is not None and word_count < SHORT_SCORECARD_MAX_WORDS:
+        return True
+    if duration_seconds is not None:
+        return duration_seconds < SHORT_SCORECARD_MAX_DURATION_SECONDS
+    if word_count is not None:
+        return False
+
+    return len(transcript.split()) < SHORT_SCORECARD_MAX_WORDS
+
+
+def _stats_int(stats: Mapping[str, Any] | None, key: str) -> int | None:
+    if not stats or stats.get(key) is None:
+        return None
+    try:
+        return int(stats[key])
+    except (TypeError, ValueError):
+        return None
+
+
+def _stats_float(stats: Mapping[str, Any] | None, key: str) -> float | None:
+    if not stats or stats.get(key) is None:
+        return None
+    try:
+        return float(stats[key])
+    except (TypeError, ValueError):
+        return None
+
+
+def clean_review_output(
+    review: str,
+    expected_labels: tuple[str, ...] = SCORECARD_LABELS,
+) -> str:
+    review = _strip_thinking_trace(review)
     lines = [line.strip() for line in review.strip().splitlines() if line.strip()]
-    bullet_lines = [line for line in lines if line.startswith("- ")]
+    bullet_lines = [_normalize_scorecard_line(line) for line in lines]
+    bullet_lines = [line for line in bullet_lines if line.startswith("- ")]
     if not bullet_lines:
         return review.strip()
 
@@ -209,6 +261,9 @@ def clean_review_output(review: str) -> str:
             continue
         if "Strength" not in selected:
             continue
+        if "Fix" in expected_labels and label in {"fix", "fix 1", "fix 2", "polish"}:
+            selected.setdefault("Fix", content)
+            continue
         if label in {"fix 1", "fix 2"}:
             canonical_label = _canonical_label(label)
             selected.setdefault(canonical_label, content)
@@ -222,16 +277,42 @@ def clean_review_output(review: str) -> str:
             selected["Next run"] = content
             break
 
-    if all(label in selected for label in SCORECARD_LABELS):
-        return "\n".join(f"- {label}: {selected[label]}" for label in SCORECARD_LABELS)
+    if all(label in selected for label in expected_labels):
+        return "\n".join(f"- {label}: {selected[label]}" for label in expected_labels)
     return review.strip()
 
 
-def is_valid_scorecard_shape(review: str) -> bool:
-    return not scorecard_shape_issues(review)
+def _strip_thinking_trace(review: str) -> str:
+    without_blocks = THINK_BLOCK_PATTERN.sub("", review)
+    return THINK_TAG_PATTERN.sub("", without_blocks).strip()
 
 
-def scorecard_shape_issues(review: str) -> list[str]:
+def _normalize_scorecard_line(line: str) -> str:
+    if line.startswith("- "):
+        return line
+    label = _plain_line_label(line)
+    if label in ALLOWED_SCORECARD_LABELS or label in GENERIC_FIX_LABELS:
+        return f"- {line}"
+    return line
+
+
+def _plain_line_label(line: str) -> str:
+    if ":" not in line:
+        return ""
+    return line.split(":", 1)[0].strip().lower()
+
+
+def is_valid_scorecard_shape(
+    review: str,
+    expected_labels: tuple[str, ...] = SCORECARD_LABELS,
+) -> bool:
+    return not scorecard_shape_issues(review, expected_labels=expected_labels)
+
+
+def scorecard_shape_issues(
+    review: str,
+    expected_labels: tuple[str, ...] = SCORECARD_LABELS,
+) -> list[str]:
     text = review.strip()
     if not text:
         return ["empty output"]
@@ -241,15 +322,15 @@ def scorecard_shape_issues(review: str) -> list[str]:
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     issues: list[str] = []
-    if len(lines) != len(SCORECARD_LABELS):
-        issues.append(f"expected {len(SCORECARD_LABELS)} lines, found {len(lines)}")
+    if len(lines) != len(expected_labels):
+        issues.append(f"expected {len(expected_labels)} lines, found {len(lines)}")
     if any(not line.startswith("- ") for line in lines):
         issues.append("all lines must be hyphen bullets")
 
     labels = [_bullet_label(line) for line in lines if line.startswith("- ")]
-    expected_labels = [label.lower() for label in SCORECARD_LABELS]
-    if labels != expected_labels:
-        issues.append(f"labels must be exactly: {', '.join(SCORECARD_LABELS)}")
+    expected_label_names = [label.lower() for label in expected_labels]
+    if labels != expected_label_names:
+        issues.append(f"labels must be exactly: {', '.join(expected_labels)}")
     if lines and not lines[-1].startswith("- Next run:"):
         issues.append("final line must start with Next run")
     return issues
@@ -265,15 +346,16 @@ def _bullet_label(line: str) -> str:
 def _parse_scorecard_bullet(line: str) -> tuple[str, str]:
     label = _bullet_label(line)
     content = _bullet_content(line)
-    if label in ALLOWED_SCORECARD_LABELS:
-        return label, content
 
     nested_label = ""
     if ":" in content:
         nested_label = content.split(":", 1)[0].strip().lower()
-    if nested_label in ALLOWED_SCORECARD_LABELS or nested_label in GENERIC_FIX_LABELS:
+    if label in GENERIC_FIX_LABELS and (nested_label in ALLOWED_SCORECARD_LABELS or nested_label in GENERIC_FIX_LABELS):
         nested_content = content.split(":", 1)[1].strip()
         return nested_label, nested_content
+
+    if label in ALLOWED_SCORECARD_LABELS:
+        return label, content
 
     return label, content
 
@@ -301,10 +383,15 @@ def _next_fix_label(selected: Mapping[str, str]) -> str | None:
 
 
 def _build_messages(transcript: str, stats: Mapping[str, Any] | None = None) -> list[dict[str, str]]:
+    scorecard_labels = expected_scorecard_labels(transcript, stats)
+    short_scorecard = scorecard_labels == SHORT_SCORECARD_LABELS
     return [
         {
             "role": "system",
-            "content": _render_prompt("review_system_prompt.jinja2"),
+            "content": _render_prompt(
+                "review_system_prompt.jinja2",
+                short_scorecard=short_scorecard,
+            ),
         },
         {
             "role": "user",
@@ -312,6 +399,7 @@ def _build_messages(transcript: str, stats: Mapping[str, Any] | None = None) -> 
                 "review_user_prompt.jinja2",
                 stats_block=format_review_stats(stats),
                 transcript=transcript,
+                short_scorecard=short_scorecard,
             ),
         },
     ]
@@ -390,6 +478,7 @@ def review_speech(transcript: str, stats: Mapping[str, Any] | None = None) -> st
         raise ValueError("The transcript is empty, so there is nothing to review.")
 
     torch, tokenizer, model = _load_review_stack()
+    scorecard_labels = expected_scorecard_labels(text, stats)
     messages = _build_messages(text, stats)
     _log_review_prompt(tokenizer, messages)
     inputs = _apply_chat_template(tokenizer, messages).to(_model_device(model))
@@ -407,10 +496,13 @@ def review_speech(transcript: str, stats: Mapping[str, Any] | None = None) -> st
         outputs = model.generate(**inputs, **generate_kwargs)
 
     generated_ids = outputs[0][inputs["input_ids"].shape[-1] :]
-    review = clean_review_output(tokenizer.decode(generated_ids, skip_special_tokens=True))
+    review = clean_review_output(
+        tokenizer.decode(generated_ids, skip_special_tokens=True),
+        expected_labels=scorecard_labels,
+    )
     if not review:
         raise RuntimeError("The review model returned an empty response. Try again with a clearer transcript.")
-    shape_issues = scorecard_shape_issues(review)
+    shape_issues = scorecard_shape_issues(review, expected_labels=scorecard_labels)
     if shape_issues:
         LOGGER.warning("Review output did not match scorecard shape: %s", "; ".join(shape_issues))
 

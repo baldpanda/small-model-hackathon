@@ -14,6 +14,7 @@ from review import (
     _review_model_label,
     _should_log_review_prompt,
     clean_review_output,
+    expected_scorecard_labels,
     format_review_stats,
     is_valid_scorecard_shape,
     scorecard_shape_issues,
@@ -146,22 +147,47 @@ class ReviewPromptTests(unittest.TestCase):
     def test_build_messages_includes_stats_block_and_transcript(self) -> None:
         messages = _build_messages(
             "To Ava and Sam.",
-            {"word_count": 4, "filler_count": 0},
+            {"word_count": 80, "filler_count": 0},
         )
 
         self.assertEqual(messages[0]["role"], "system")
         self.assertEqual(messages[1]["role"], "user")
         self.assertIn("Stats:", messages[1]["content"])
-        self.assertIn("- Word count: 4", messages[1]["content"])
+        self.assertIn("- Word count: 80", messages[1]["content"])
         self.assertIn("Transcript:\nTo Ava and Sam.", messages[1]["content"])
         self.assertIn("Output exactly 4 bullets", messages[0]["content"])
         self.assertIn('"- Strength:", "- Fix 1:", "- Fix 2:", "- Next run:"', messages[0]["content"])
         self.assertIn("Output exactly four hyphen bullets", messages[1]["content"])
 
+    def test_build_messages_uses_short_contract_for_tiny_clip(self) -> None:
+        messages = _build_messages(
+            "Into the back row, and what about Lewis Hamilton in that row?",
+            {
+                "duration_seconds": 13.3,
+                "word_count": 28,
+                "wpm": 126.7,
+                "wpm_band": "medium (120-180)",
+                "filler_count": 0,
+            },
+        )
+
+        self.assertEqual(expected_scorecard_labels("short clip", {"word_count": 28}), ("Strength", "Fix", "Next run"))
+        self.assertIn("Output exactly 3 bullets", messages[0]["content"])
+        self.assertIn('"- Strength:", "- Fix:", "- Next run:"', messages[0]["content"])
+        self.assertIn("Do not output \"Fix 1:\" or \"Fix 2:\"", messages[0]["content"])
+        self.assertIn("Output exactly three hyphen bullets", messages[1]["content"])
+        self.assertIn("Use Fix for the single highest-impact change", messages[1]["content"])
+
     def test_build_messages_instructs_stats_and_functional_role_use(self) -> None:
         messages = _build_messages(
             "Good evening, fellow Toastmasters. Tonight I'm the grammarian.",
-            {"wpm": 97.4, "wpm_band": "slow (<120)", "filler_count": 0, "filler_band": "low (0-1/min)"},
+            {
+                "word_count": 90,
+                "wpm": 97.4,
+                "wpm_band": "slow (<120)",
+                "filler_count": 0,
+                "filler_band": "low (0-1/min)",
+            },
         )
 
         self.assertIn("Toastmasters role such as grammarian", messages[0]["content"])
@@ -224,6 +250,60 @@ class ReviewPromptTests(unittest.TestCase):
         )
         self.assertTrue(is_valid_scorecard_shape(cleaned))
 
+    def test_clean_review_output_uses_one_fix_for_short_contract(self) -> None:
+        expected_labels = ("Strength", "Fix", "Next run")
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The topic is clear.",
+                    "- Fix 1: Make the point specific.",
+                    "- Fix 2: Add another example.",
+                    "- Next run: Record one complete sentence.",
+                ]
+            ),
+            expected_labels=expected_labels,
+        )
+
+        self.assertEqual(
+            cleaned,
+            "\n".join(
+                [
+                    "- Strength: The topic is clear.",
+                    "- Fix: Make the point specific.",
+                    "- Next run: Record one complete sentence.",
+                ]
+            ),
+        )
+        self.assertTrue(is_valid_scorecard_shape(cleaned, expected_labels=expected_labels))
+
+    def test_clean_review_output_strips_thinking_and_normalizes_plain_short_labels(self) -> None:
+        expected_labels = ("Strength", "Fix", "Next run")
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "<think>",
+                    "",
+                    "</think> Strength: The role is clear.",
+                    "Fix 1: Add one concrete detail.",
+                    "Fix 2: Add another example.",
+                    "Next run: Record one complete sentence.",
+                ]
+            ),
+            expected_labels=expected_labels,
+        )
+
+        self.assertEqual(
+            cleaned,
+            "\n".join(
+                [
+                    "- Strength: The role is clear.",
+                    "- Fix: Add one concrete detail.",
+                    "- Next run: Record one complete sentence.",
+                ]
+            ),
+        )
+        self.assertTrue(is_valid_scorecard_shape(cleaned, expected_labels=expected_labels))
+
     def test_clean_review_output_normalizes_nested_next_run_label(self) -> None:
         cleaned = clean_review_output(
             "\n".join(
@@ -263,6 +343,19 @@ class ReviewPromptTests(unittest.TestCase):
 
         self.assertIn("expected 4 lines, found 3", issues)
         self.assertFalse(is_valid_scorecard_shape("\n".join(["- Strength: Clear.", "- Fix 1: Specific."])))
+
+    def test_scorecard_shape_issues_accept_short_contract_when_expected(self) -> None:
+        review = "\n".join(
+            [
+                "- Strength: The role is clear.",
+                "- Fix: Add one concrete detail.",
+                "- Next run: Record the opening once.",
+            ]
+        )
+        expected_labels = ("Strength", "Fix", "Next run")
+
+        self.assertEqual(scorecard_shape_issues(review, expected_labels=expected_labels), [])
+        self.assertTrue(is_valid_scorecard_shape(review, expected_labels=expected_labels))
 
 
 if __name__ == "__main__":

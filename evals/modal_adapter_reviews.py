@@ -65,7 +65,13 @@ def generate_adapter_reviews_remote(
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     sys.path.insert(0, REMOTE_APP_DIR)
-    from review import PROMPT_VERSION, _build_messages, clean_review_output, scorecard_shape_issues
+    from review import (
+        PROMPT_VERSION,
+        _build_messages,
+        clean_review_output,
+        expected_scorecard_labels,
+        scorecard_shape_issues,
+    )
 
     adapter_path = str(Path(REMOTE_VOLUME_DIR) / adapter_rel_path)
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, **hf_kwargs())
@@ -93,6 +99,7 @@ def generate_adapter_reviews_remote(
             "stats": record["stats"],
         }
         try:
+            scorecard_labels = expected_scorecard_labels(transcript, record["stats"])
             messages = _build_messages(transcript, record["stats"])
             inputs = apply_chat_template(tokenizer, messages).to(model.device)
             generate_kwargs = {
@@ -106,8 +113,14 @@ def generate_adapter_reviews_remote(
             with torch.inference_mode():
                 outputs = model.generate(**inputs, **generate_kwargs)
             generated_ids = outputs[0][inputs["input_ids"].shape[-1] :]
-            result["review"] = clean_review_output(tokenizer.decode(generated_ids, skip_special_tokens=True))
-            result["scorecard_shape_issues"] = scorecard_shape_issues(result["review"])
+            result["review"] = clean_review_output(
+                tokenizer.decode(generated_ids, skip_special_tokens=True),
+                expected_labels=scorecard_labels,
+            )
+            result["scorecard_shape_issues"] = scorecard_shape_issues(
+                result["review"],
+                expected_labels=scorecard_labels,
+            )
             result["scorecard_shape_valid"] = not result["scorecard_shape_issues"]
         except Exception as exc:  # noqa: BLE001 - eval rows should capture failures and continue.
             result["error_type"] = type(exc).__name__

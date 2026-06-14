@@ -72,10 +72,12 @@ Required inference behavior:
 - keep output concise and user-facing
 - do not expose reasoning traces
 - train and evaluate against the compact scorecard output contract in `evals/speech-feedback-coaching-rubric.md`
-- use the fixed four-line app-facing scorecard shape: `Strength`, `Fix 1`, `Fix 2`, `Next run`
-- use `Fix 1` for the highest-impact content or structure change
-- use `Fix 2` for the highest-impact delivery or stats-based change, or proportionate polish when stats are already controlled
-- require `Fix 2` to use pace or filler stats when those stats are outside the controlled range
+- use the four-line app-facing scorecard shape for substantive clips: `Strength`, `Fix 1`, `Fix 2`, `Next run`
+- use a shorter three-line app-facing scorecard for clips with too little material for two useful fixes: `Strength`, `Fix`, `Next run`
+- treat clips under 50 words or under 20 seconds as too short for two fixes unless future product work defines a separate mode
+- in the four-line shape, use `Fix 1` for the highest-impact content or structure change
+- in the four-line shape, use `Fix 2` for the highest-impact delivery or stats-based change, or proportionate polish when stats are already controlled
+- require the delivery/stat fix to use pace or filler stats when those stats are outside the controlled range
 - handle Toastmasters roles as functional role briefings, not as wedding-style speeches or generic vocabulary examples
 - keep generation conservative for schema adherence (`temperature=0.1` in the current app path)
 - record scorecard-shape validity during evals, but do not spend a second GPU call on retry or repair generation
@@ -90,12 +92,22 @@ The rubric uses 0/1/2 scoring across dimensions for context tailoring, content s
 
 The rubric also defines hard gates for material hallucination, reasoning traces, full-speech rewriting, generic wedding advice on non-wedding transcripts, too many fixes, missing next step, and ignoring relevant stats.
 
-The current prompt-tightening pass standardizes the app-facing scorecard to exactly four hyphen bullets:
+The current prompt-tightening pass standardizes the app-facing scorecard to hyphen bullets.
+
+Substantive clips use four bullets:
 
 1. `Strength:` one earned transcript-specific strength.
 2. `Fix 1:` the highest-impact content or structure change.
 3. `Fix 2:` the highest-impact delivery or stats-based change.
 4. `Next run:` one concrete rehearsable action.
+
+Clips under 50 words or under 20 seconds use three bullets:
+
+1. `Strength:` one earned transcript-specific strength.
+2. `Fix:` the single highest-impact fix, chosen from content, structure, delivery, or stats.
+3. `Next run:` one concrete rehearsable action.
+
+The short shape exists to avoid forcing a second fix from thin material. It is better to return one useful fix than two repetitive or invented fixes.
 
 This is an inference-side stabilization pass. It does not require retraining by itself, and it intentionally does not add retry behavior because a second generation would increase GPU work.
 

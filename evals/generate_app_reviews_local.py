@@ -26,7 +26,7 @@ def main() -> None:
     if not records:
         raise SystemExit(f"No records found in {args.input}")
 
-    from review import PROMPT_VERSION, review_speech, scorecard_shape_issues
+    from review import PROMPT_VERSION, expected_scorecard_labels, review_speech, scorecard_shape_issues
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     completed_ids = read_completed_ids(args.output) if args.resume else set()
@@ -52,11 +52,15 @@ def main() -> None:
                 "stats": record["stats"],
             }
             try:
+                scorecard_labels = expected_scorecard_labels(transcript, record["stats"])
                 result["review"] = call_with_timeout(
                     lambda: review_speech(transcript, stats=record["stats"]),
                     timeout_seconds=args.per_item_timeout_seconds,
                 )
-                result["scorecard_shape_issues"] = scorecard_shape_issues(result["review"])
+                result["scorecard_shape_issues"] = scorecard_shape_issues(
+                    result["review"],
+                    expected_labels=scorecard_labels,
+                )
                 result["scorecard_shape_valid"] = not result["scorecard_shape_issues"]
             except Exception as exc:  # noqa: BLE001 - eval rows should capture failures and continue.
                 LOGGER.warning("Review failed for %s: %s", transcript_id, exc)
