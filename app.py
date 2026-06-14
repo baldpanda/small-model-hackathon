@@ -531,13 +531,13 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                 )
                 with gr.Row(elem_id="rehearsal-actions"):
                     transcribe_button = gr.Button(
-                        "Hear me out",
+                        "Review speech",
                         variant="primary",
                         elem_id="review-button",
                         scale=3,
                     )
                     try_again_button = gr.Button(
-                        "Another round",
+                        "Try again",
                         variant="secondary",
                         elem_id="try-again-button",
                         scale=1,
