@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-
-import soundfile as sf
-
+from types import SimpleNamespace
 
 SLOW_WPM_LIMIT = 110
 FAST_WPM_LIMIT = 165
 LOW_CONFIDENCE_SECONDS = 5
 LOW_CONFIDENCE_WORDS = 8
 WORD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?")
+sf = SimpleNamespace()
 
 
 @dataclass(frozen=True)
@@ -23,6 +22,11 @@ class TimingAnalysis:
 
 
 def get_audio_duration_seconds(audio_path: str) -> float:
+    if not hasattr(sf, "info"):
+        import soundfile as soundfile_module
+
+        sf.info = soundfile_module.info
+
     try:
         info = sf.info(audio_path)
     except RuntimeError as exc:
