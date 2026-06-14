@@ -577,7 +577,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     elem_classes=["score-output"],
                 )
 
-            with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
+            with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"], elem_id="review-card"):
                 gr.Markdown("## The honest review")
                 feedback_output = gr.Markdown(
                     value="_The honest review will land here once the coach has heard you out._",
