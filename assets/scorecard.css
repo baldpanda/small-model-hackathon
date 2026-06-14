@@ -822,3 +822,49 @@
   color: var(--burgundy) !important;
   font-style: normal;
 }
+
+/* --- Status card: step trail instead of debug timings --- */
+#status-output .status-msg {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+  color: var(--ink) !important;
+}
+#status-output .status-trail {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 16px;
+}
+#status-output .status-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-ink) !important;
+}
+#status-output .status-step .dot {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: transparent;
+  flex: none;
+}
+#status-output .status-step--done {
+  color: var(--ink) !important;
+}
+#status-output .status-step--done .dot {
+  background: var(--green);
+  border-color: var(--green);
+}
+#status-output .status-step--active {
+  color: var(--ink) !important;
+}
+#status-output .status-step--active .dot {
+  border-color: var(--burgundy);
+  box-shadow: inset 0 0 0 3.5px var(--burgundy);
+}

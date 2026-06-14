@@ -1,3 +1,4 @@
+import html
 import logging
 import random
 import time
@@ -224,6 +225,43 @@ SPEECH_FEEDBACK_SECTIONS = (
     "Bottom line",
 )
 
+STATUS_STEPS = ("Listening back", "Pacing", "Crutch words", "Coach's note")
+
+
+def _infer_stage(message: str) -> int | None:
+    text = message.lower()
+    if "all done" in text:
+        return 4
+    if "asking the coach" in text:
+        return 3
+    if "counting the crutch" in text:
+        return 2
+    if "clocking your pacing" in text:
+        return 1
+    if "listening back" in text:
+        return 0
+    return None
+
+
+def format_status_html(message: str) -> str:
+    body = f'<p class="status-msg">{html.escape(message)}</p>'
+    stage = _infer_stage(message)
+    if stage is None:
+        return body
+    rows: list[str] = []
+    for index, label in enumerate(STATUS_STEPS):
+        if index < stage:
+            state = "done"
+        elif index == stage:
+            state = "active"
+        else:
+            state = "todo"
+        rows.append(
+            f'<div class="status-step status-step--{state}">'
+            f'<span class="dot"></span>{html.escape(label)}</div>'
+        )
+    return body + '<div class="status-trail">' + "".join(rows) + "</div>"
+
 
 class ProcessingTimer:
     def __init__(self, requested_gpu_seconds: int | None = None) -> None:
@@ -236,15 +274,6 @@ class ProcessingTimer:
 
     def total_seconds(self) -> float:
         return time.perf_counter() - self.started_at
-
-    def format_markdown(self) -> str:
-        lines = ["", "**Processing timings**"]
-        if self.requested_gpu_seconds is not None:
-            lines.append(f"- requested GPU budget: {self.requested_gpu_seconds}s")
-        for label, seconds in self.steps:
-            lines.append(f"- {label}: {seconds:.1f}s")
-        lines.append(f"- total: {self.total_seconds():.1f}s")
-        return "\n".join(lines)
 
     def log(self, status: str) -> None:
         parts = [f"{label}={seconds:.1f}s" for label, seconds in self.steps]
@@ -269,7 +298,7 @@ def _timed_step(timer: ProcessingTimer, label: str, action):
 def _status_with_timings(message: str, timer: ProcessingTimer, *, log: bool = True) -> str:
     if log:
         timer.log(message.splitlines()[0])
-    return f"{message}{timer.format_markdown()}"
+    return format_status_html(message)
 
 
 def _outputs(
@@ -435,7 +464,7 @@ def _process_valid_rehearsal(
 
 
 def _clear_outputs(status: str) -> tuple[str, str, str, str, str]:
-    return "", "", "", "", status
+    return "", "", "", "", format_status_html(status)
 
 
 def _reset_rehearsal() -> tuple[None, str, str, str, str, str]:
@@ -564,8 +593,8 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
 
             with gr.Column(scale=5, elem_classes=["scorecard-card"]):
                 gr.Markdown("## How it's going")
-                status_output = gr.Markdown(
-                    value="Glass raised — ready when you are.",
+                status_output = gr.HTML(
+                    value='<p class="status-msg">Glass raised — ready when you are.</p>',
                     elem_id="status-output",
                 )
 
