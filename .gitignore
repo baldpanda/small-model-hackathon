@@ -1,16 +1,41 @@
+# Python and local tooling
 .venv/
 .uv-cache/
-.gradio/
 __pycache__/
 .DS_Store
+
+# Local app/runtime state
+.gradio/
 model_details/
+
+# Local agent scratch and worktrees
+.claude/
+
+# Private traces and sanitization inputs/outputs
 traces/
+
+# Private source data, transcripts, generated datasets, and eval outputs
 data/private/
 data/generated/
+transcripts/
 eval/private/
 evals/private/
+evals/data/
+evals/outputs/
 evals/.venv*/
+
+# Adapter artifacts, checkpoints, and remote training outputs
+adapters/
 runs/
 modal-artifacts/
-adapters/
-evals/data/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# Local secrets and debug output
+.env
+.env.*
+*.log
+*.tmp
+*.bak

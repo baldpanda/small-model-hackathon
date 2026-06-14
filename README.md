@@ -6,20 +6,45 @@ app_file: app.py
 python_version: "3.12"
 ---
 
-# Small Model Hackathon
+# Best Man Speech Coach
 
-A project for the [Hugging Face Build Small Hackathon](https://huggingface.co/build-small-hackathon).
+Record a roughly one-minute speech rehearsal and get a transcript plus a practical scorecard.
+The app reviews structure, pacing, and filler habits so the next run has one or two concrete goals.
 
-## About
+**Model budget:** about 3B parameters total across both models. This is a small-model hackathon project, and the small combined budget is part of the build.
 
-This repository will contain the code, notes, and experiments for the hackathon build.
+- Live Space: [build-small-hackathon/best-man-speech-practice](https://huggingface.co/spaces/build-small-hackathon/best-man-speech-practice)
+- Demo video: TODO
 
-## Hackathon Details
+## Models
 
-- Event: [Hugging Face Build Small Hackathon](https://huggingface.co/build-small-hackathon)
-- Dates: June 5 to June 15
-- Model size limit: total model size up to 32B parameters
-- Submission format: a Gradio app hosted as a Hugging Face Space
+| Role | Model or artifact | License/status | Notes |
+| --- | --- | --- | --- |
+| Transcription | [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) | Apache-2.0 | Gated model. Judges or users duplicating the Space must request access on the model page first. |
+| Review and feedback | [`openbmb/MiniCPM5-1B`](https://huggingface.co/openbmb/MiniCPM5-1B) | Apache-2.0 | Base review model. The live Space runs a fine-tuned LoRA adapter on top of it. |
+| Fine-tuned adapter | [`build-small-hackathon/minicpm5-speech-feedback-lora-v5`](https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v5) | LoRA adapter for `openbmb/MiniCPM5-1B` | Trained and published for speech-feedback scorecards. |
+
+The review stack uses the MiniCPM5 base model with the published LoRA adapter above. Local runs can fall back to the base model if `REVIEW_ADAPTER_ID` is unset, but the submitted Space is configured to run the fine-tuned version.
+
+## Architecture
+
+1. Record or upload a short rehearsal in Gradio.
+2. Transcribe audio on GPU with Cohere Transcribe.
+3. Run deterministic timing and filler analysis on CPU.
+4. Generate review feedback on GPU with MiniCPM5 plus the LoRA adapter.
+5. Render the transcript, pacing notes, filler notes, and scorecard.
+
+## Running The Space
+
+The app runs as a Gradio Space on Hugging Face ZeroGPU. Anonymous users have limited ZeroGPU quota; logging into Hugging Face gives more GPU quota.
+
+The Cohere transcription model is gated. To duplicate or run the Space, request access to [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026), then provide a Hugging Face token with access as `HF_TOKEN` or `HUGGINGFACEHUB_API_TOKEN`.
+
+The live review adapter is configured with:
+
+```text
+REVIEW_ADAPTER_ID=build-small-hackathon/minicpm5-speech-feedback-lora-v5
+```
 
 ## Local Development
 
@@ -31,7 +56,7 @@ Run the app locally:
 uv run python app.py
 ```
 
-The app loads both model stacks at startup for ZeroGPU efficiency, so local app startup requires access to the gated transcription model through `HF_TOKEN` or `HUGGINGFACEHUB_API_TOKEN`.
+The app loads both model stacks at startup for ZeroGPU efficiency, so local startup requires access to the gated transcription model through `HF_TOKEN` or `HUGGINGFACEHUB_API_TOKEN`. Set `REVIEW_ADAPTER_ID` to run the LoRA adapter locally.
 
 Validate that the transcription and review models can share one dependency/runtime environment:
 
@@ -41,11 +66,22 @@ uv run python scripts/prove_phase4_models.py
 
 Use `--imports-only`, `--skip-cohere`, or `--skip-minicpm` to narrow the check while debugging. The Cohere transcription check requires `HF_TOKEN` or `HUGGINGFACEHUB_API_TOKEN` because the model is gated.
 
-Export Space-compatible dependencies:
+Export Space-compatible dependencies after dependency changes:
 
 ```bash
 ./export_space_requirements.sh
 ```
+
+`requirements.txt` is generated for Hugging Face Spaces compatibility. The export script pins `torch==2.10.0` in `requirements.txt` because Hugging Face ZeroGPU rejects marker-based multi-version torch entries even when the Linux pin is otherwise compatible.
+
+## Licensing
+
+Both external models used by the app are Apache-2.0 licensed:
+
+- [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
+- [`openbmb/MiniCPM5-1B`](https://huggingface.co/openbmb/MiniCPM5-1B)
+
+This repository currently has no license file. Treat the repository code, specs, and assets as unlicensed unless a license is added later.
 
 ## Trace Sanitization
 
@@ -71,7 +107,7 @@ python3 scripts/sanitize_codex_trace.py \
   --redact-term "private venue"
 ```
 
-Before publishing a sanitized trace, manually inspect it for private wedding details and rerun a secret/path check such as:
+Before publishing a sanitized trace, manually inspect it for private speech details and rerun a secret/path check such as:
 
 ```bash
 TRACE=traces/sanitized/rollout-example.sanitized.jsonl
@@ -80,10 +116,4 @@ rg -n -i 'sk-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9_-]{20,}|github_pat_|gh[pousr]_|/Us
 
 ## Deployment
 
-The Gradio app is deployed to this Hugging Face Space:
-
-[build-small-hackathon/best-man-speech-practice](https://huggingface.co/spaces/build-small-hackathon/best-man-speech-practice)
-
-GitHub Actions syncs `main` to the Space. The workflow requires a GitHub Actions secret named `HF_TOKEN` with write access to the Space.
-
-The export script pins `torch==2.11.0` in `requirements.txt` because Hugging Face ZeroGPU rejects marker-based multi-version torch entries even when the Linux pin is otherwise compatible.
+GitHub Actions syncs `main` to the Hugging Face Space. The workflow requires a GitHub Actions secret named `HF_TOKEN` with write access to the Space.
