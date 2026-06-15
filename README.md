@@ -8,6 +8,9 @@ tags:
   - build-small-hackathon
   - backyard-ai
   - track:backyard
+  - sponsor:openbmb
+  - sponsor:openai
+  - sponsor:modal
   - off-the-grid
   - achievement:offgrid
   - well-tuned
@@ -41,6 +44,14 @@ The app reviews structure, pacing, and filler habits so the next run has one or 
 | Fine-tuned adapter | [`build-small-hackathon/minicpm5-speech-feedback-lora-v12`](https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v12) | Apache-2.0 | LoRA adapter for `openbmb/MiniCPM5-1B`, trained and published for speech-feedback scorecards. |
 
 The review stack uses the MiniCPM5 base model with the published LoRA adapter above. Local runs can fall back to the base model if `REVIEW_ADAPTER_ID` is unset, but the submitted Space is configured to run the fine-tuned version.
+
+## Sponsor Stack
+
+Sponsor prizes this submission is eligible for:
+
+- **OpenBMB — Best MiniCPM Build.** The review path runs [`openbmb/MiniCPM5-1B`](https://huggingface.co/openbmb/MiniCPM5-1B) with the published LoRA adapter fine-tuned on top of it; see the Models section above.
+- **OpenAI — Best Use of Codex.** This repo was built with OpenAI Codex throughout the hackathon. The commit history is largely Codex-attributed, and a sanitized snapshot of the agent traces is published at [`build-small-hackathon/best-man-speech-codex-traces`](https://huggingface.co/datasets/build-small-hackathon/best-man-speech-codex-traces).
+- **Modal — Best Use of Modal.** The fine-tuned LoRA adapter was trained on Modal (L4 GPU) end-to-end. Modal provided the training runtime that produced [`build-small-hackathon/minicpm5-speech-feedback-lora-v12`](https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v12).
 
 ## Architecture
 
