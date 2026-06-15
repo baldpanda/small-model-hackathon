@@ -1,5 +1,9 @@
 ---
 title: Best Man Speech Coach
+emoji: 🥂
+colorFrom: pink
+colorTo: yellow
+short_description: Rehearse a best man speech and get a practical scorecard.
 sdk: gradio
 sdk_version: "6.17.3"
 app_file: app.py
