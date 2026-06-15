@@ -22,7 +22,7 @@ The app reviews structure, pacing, and filler habits so the next run has one or 
 | --- | --- | --- | --- |
 | Transcription | [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) | Apache-2.0 | Gated model. Judges or users duplicating the Space must request access on the model page first. |
 | Review and feedback | [`openbmb/MiniCPM5-1B`](https://huggingface.co/openbmb/MiniCPM5-1B) | Apache-2.0 | Base review model. The live Space runs a fine-tuned LoRA adapter on top of it. |
-| Fine-tuned adapter | [`build-small-hackathon/minicpm5-speech-feedback-lora-v11`](https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v11) | LoRA adapter for `openbmb/MiniCPM5-1B` | Trained and published for speech-feedback scorecards. |
+| Fine-tuned adapter | [`build-small-hackathon/minicpm5-speech-feedback-lora-v12`](https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v12) | Apache-2.0 | LoRA adapter for `openbmb/MiniCPM5-1B`, trained and published for speech-feedback scorecards. |
 
 The review stack uses the MiniCPM5 base model with the published LoRA adapter above. Local runs can fall back to the base model if `REVIEW_ADAPTER_ID` is unset, but the submitted Space is configured to run the fine-tuned version.
 
@@ -43,7 +43,7 @@ The Cohere transcription model is gated. To duplicate or run the Space, request 
 The live review adapter is configured with:
 
 ```text
-REVIEW_ADAPTER_ID=build-small-hackathon/minicpm5-speech-feedback-lora-v11
+REVIEW_ADAPTER_ID=build-small-hackathon/minicpm5-speech-feedback-lora-v12
 ```
 
 ## Local Development
@@ -80,6 +80,8 @@ Both external models used by the app are Apache-2.0 licensed:
 
 - [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
 - [`openbmb/MiniCPM5-1B`](https://huggingface.co/openbmb/MiniCPM5-1B)
+
+The fine-tuned LoRA adapter [`build-small-hackathon/minicpm5-speech-feedback-lora-v12`](https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v12) is also released under Apache-2.0, matching the base model.
 
 This repository currently has no license file. Treat the repository code, specs, and assets as unlicensed unless a license is added later.
 
