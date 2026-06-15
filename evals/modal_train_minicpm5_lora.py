@@ -81,6 +81,7 @@ def train_lora_remote(
     max_steps: int = 0,
     save_steps: int = 25,
     gradient_accumulation_steps: int = 2,
+    learning_rate: float = 2e-4,
 ) -> dict[str, Any]:
     import json
     from pathlib import Path
@@ -137,7 +138,7 @@ def train_lora_remote(
         "num_train_epochs": epochs,
         "per_device_train_batch_size": 4,
         "gradient_accumulation_steps": gradient_accumulation_steps,
-        "learning_rate": 2e-4,
+        "learning_rate": learning_rate,
         "warmup_ratio": 0.03,
         "lr_scheduler_type": "cosine",
         "bf16": True,
@@ -201,6 +202,7 @@ def train_lora_remote(
         "per_device_train_batch_size": 4,
         "gradient_accumulation_steps": gradient_accumulation_steps,
         "effective_batch_size": 4 * gradient_accumulation_steps,
+        "learning_rate": learning_rate,
         "adapter_dir": str(adapter_dir.relative_to(REMOTE_VOLUME_DIR)),
         "assistant_mask_check": str((output_dir / "assistant_mask_check.json").relative_to(REMOTE_VOLUME_DIR)),
         "trainer_state": str((output_dir / "trainer_state.json").relative_to(REMOTE_VOLUME_DIR)),
@@ -222,6 +224,7 @@ def main(
     max_steps: int = 2,
     save_steps: int = 25,
     gradient_accumulation_steps: int = 2,
+    learning_rate: float = 2e-4,
 ) -> None:
     result = train_lora_remote.remote(
         run_name=run_name,
@@ -233,6 +236,7 @@ def main(
         max_steps=max_steps,
         save_steps=save_steps,
         gradient_accumulation_steps=gradient_accumulation_steps,
+        learning_rate=learning_rate,
     )
     print(result)
 

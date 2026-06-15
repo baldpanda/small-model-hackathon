@@ -77,7 +77,7 @@ Required inference behavior:
 - add a second or third fix only when each additional fix is clearly useful and distinct
 - mention pace, duration, fillers, or other stats only when they are one of the highest-impact fixes
 - handle Toastmasters roles as functional role briefings, not as wedding-style speeches or generic vocabulary examples
-- keep generation conservative for schema adherence (`temperature=0.1` in the current app path)
+- use deterministic generation for schema adherence and stable app behavior
 - record scorecard-shape validity during evals, but do not spend a second GPU call on retry or repair generation
 
 Thinking mode should stay off because this workflow needs direct coaching output, not visible reasoning. The fine-tuned adapter should learn the final feedback style, not chain-of-thought or hidden deliberation.
@@ -102,6 +102,8 @@ All clips use a variable numbered-fix contract:
 The variable shape exists to avoid forcing a second fix from thin material. It is better to return one useful fix than two repetitive or invented fixes. Stats do not get a reserved slot; the model should mention them only when they are among the highest-impact issues for the next rehearsal.
 
 This is an inference-side stabilization pass. It does not require retraining by itself, and it intentionally does not add retry behavior because a second generation would increase GPU work. Use a small repetition penalty plus duplicate-fix cleanup for repeated-fix failures. Do not use `no_repeat_ngram_size=3`; held-out Modal testing showed it breaks the fixed label tokens into invalid labels such as `Fix 4`.
+
+Faithfulness includes more than avoiding invented stories. The app-facing prompt and gold examples should preserve actor, ownership, and negation when paraphrasing transcript details, especially for generosity stories and roast setups where flipping `he lent me his car` into `my car` changes the meaning.
 
 ## Evaluation Workflow
 
@@ -190,8 +192,9 @@ Training defaults should start conservative but must still produce enough optimi
 - LoRA, not full-model fine-tuning
 - BF16 where supported
 - bounded context length suitable for two-minute rehearsal transcripts
-- 3-6 epochs for the full run, with the current recommended full run using 4 epochs
-- gradient accumulation low enough to avoid a tiny update count; the current recommended full run uses per-device batch size 4 and gradient accumulation 2, for an effective batch size of 8 and roughly 13 optimizer updates per epoch on 104 training rows
+- 3-6 epochs for the full run
+- gradient accumulation low enough to avoid a tiny update count; the current runs use per-device batch size 4 and gradient accumulation 2, for an effective batch size of 8
+- use a lower learning rate such as `1e-4` for targeted repair runs; the original `2e-4` recipe is workable but more aggressive for a small, repeated synthetic supplement
 - explicit seed
 - saved PEFT adapter artifacts
 
@@ -221,6 +224,20 @@ Before the full run, verify that held-out inputs and SFT inputs use the same com
 Also verify the gold assistant outputs before the full run. With only 104 training examples, the adapter will lean heavily on structural patterns in the gold data. The data should include enough single-fix examples and should allow one to three prioritized fixes where appropriate; otherwise the adapter will inherit a forced two-fix habit and repeat the same point in different words.
 
 Merging the adapter into a full model is optional and not required for this phase.
+
+### Current Candidate Strategy
+
+The current best candidate is not a pure adapter-only fix. Targeted v9/v10/v11 SFT runs improved scorecard shape and many actor/ownership examples, but MiniCPM5-1B can still occasionally flip or blur first-person details in high-risk constructions such as `Sarah lent me her car` or `I gave Ravi my spare room`. Treat deterministic decoding and transcript-grounded post-generation cleaning as part of the app-facing review path, not as a separate retry generation step.
+
+Current candidate artifacts:
+
+- v9 full run: `runs/full-v9-perspective-short/adapter_final`, 207 train rows, 26 validation rows, 3 epochs, effective batch size 8, learning rate `1e-4`, 78 optimizer steps.
+- v10 full run: `runs/full-v10-curated-perspective/adapter_final`, 169 train rows, 26 validation rows, 3 epochs, effective batch size 8, learning rate `1e-4`, 66 optimizer steps.
+- v10 deliberately excluded noisy `keep the direction clear` style augment targets and used a smaller curated supplement focused on explicit actor/action/object wording.
+- v11 full run: `runs/full-v11-story-truth/adapter_final`, 193 train rows, 26 validation rows, 3 epochs, effective batch size 8, learning rate `1e-4`, 75 optimizer steps.
+- v11 retained the v10 perspective rows and added 24 repeated story-truth rows for anecdote-to-meaning judgment.
+
+Ship gating should use generated outputs, not validation loss. The latest v11 adapter plus deterministic decoding and transcript-grounded cleaner passes the 24-row targeted canary set and the 15-row held-out deterministic gates for scorecard shape and quote faithfulness. It should be treated as the current shipping candidate for end-to-end app testing, with the caveat that fine-tuning alone did not solve every judgment issue; the guardrails are part of the candidate behavior.
 
 ## Privacy and Storage
 

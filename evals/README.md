@@ -62,7 +62,7 @@ python evals/generate_app_reviews_local.py \
 
 This imports `review.review_speech()` from the app code, so it uses the same model ID, prompt templates, generation settings, deterministic stats block, and `enable_thinking=False` behavior as the deployed app review path.
 
-The variable-fix prompt baseline is tagged as `stats_variable_fix_scorecard_v4`. The app-facing scorecard uses `Strength`, `Fix 1`, optional `Fix 2` and `Fix 3`, and `Next run`. The model should use one fix by default and add more only when each additional fix is clearly useful and distinct. Stats are included in the input but do not get a reserved slot. The app path uses a small repetition penalty, then applies a narrow scorecard cleaner that deduplicates repeated fixes, renumbers the remaining fixes, and drops extra bullets if the model continues after the next-step line. Eval outputs include `scorecard_shape_valid`, `scorecard_shape_issues`, `quote_faithfulness_valid`, and `quote_faithfulness_issues`; there is no retry or repair generation pass. Do not add `no_repeat_ngram_size=3` here: a held-out Modal run showed it corrupts fixed labels into invalid values such as `Fix 4`.
+The variable-fix prompt baseline is tagged as `stats_variable_fix_scorecard_v4`. The app-facing scorecard uses `Strength`, `Fix 1`, optional `Fix 2` and `Fix 3`, and `Next run`. The model should use one fix by default and add more only when each additional fix is clearly useful and distinct. Stats are included in the input but do not get a reserved slot. The app path uses deterministic decoding plus a small repetition penalty, then applies a scorecard cleaner that deduplicates repeated fixes, renumbers the remaining fixes, drops extra bullets if the model continues after the next-step line, and appends a conservative fallback `Next run` when the model gives a strength and fix but omits the final action. It also applies a transcript-grounded faithfulness cleaner for observed high-risk paraphrase errors: actor/ownership perspective flips around first-person events, negation flips around `would do anything`, unsupported marriage-pronoun flips, unfaithful quote marks, and a few narrowly observed typo/ASR cleanup cases. Eval outputs include `scorecard_shape_valid`, `scorecard_shape_issues`, `quote_faithfulness_valid`, and `quote_faithfulness_issues`; there is no retry or repair generation pass. Do not add `no_repeat_ngram_size=3` here: a held-out Modal run showed it corrupts fixed labels into invalid values such as `Fix 4`.
 
 ## Run App Baseline Reviews On Modal
 
@@ -134,15 +134,20 @@ Before the next real training run, fix assistant quotes and enable the quote-fai
 ```bash
 python evals/validate_sft_dataset.py \
   --input evals/private/sft_train_messages.jsonl \
-  --check-quote-faithfulness
+  --check-quote-faithfulness \
+  --check-distinct-fixes
 python evals/validate_sft_dataset.py \
   --input evals/private/sft_val_messages.jsonl \
-  --check-quote-faithfulness
+  --check-quote-faithfulness \
+  --check-distinct-fixes
 ```
 
 This fails when a gold response puts a paraphrase in double quotes. Use double quotes only for exact transcript spans; paraphrase without quotation marks.
+It also fails when two gold fix bullets are duplicate or near-duplicate, because the model has repeatedly inherited redundant-fix patterns from small SFT data.
 
-The current default split is 104 train rows, 26 validation rows, and an 8-row smoke sample drawn from train.
+The split report includes scenario-family counts when rows provide `scenario_family`, `family_id`, or `family`. Keep variants of the same hard case in the same family so the train/validation split does not leak near-duplicate examples across both sides.
+
+The base gold split is 104 train rows, 26 validation rows, and an 8-row smoke sample drawn from train. Targeted augment rows are added to train only by default and should be evaluated with a separate held-out canary JSONL.
 
 ## Fine-Tune On Modal
 

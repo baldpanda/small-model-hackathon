@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from difflib import SequenceMatcher
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,8 @@ def main() -> None:
         eval_hashes=eval_hashes,
         validate_assistant_scorecard=validate_assistant_scorecard,
         check_quote_faithfulness=args.check_quote_faithfulness,
+        check_distinct_fixes=args.check_distinct_fixes,
+        max_fix_similarity=args.max_fix_similarity,
     )
     fix_counts = assistant_fix_count_distribution(rows)
     single_fix_rows = fix_counts.get(1, 0)
@@ -51,6 +55,17 @@ def parse_args() -> argparse.Namespace:
         "--check-quote-faithfulness",
         action="store_true",
         help="Fail if assistant double-quoted spans are not found in the transcript after light normalization.",
+    )
+    parser.add_argument(
+        "--check-distinct-fixes",
+        action="store_true",
+        help="Fail if a gold assistant output has duplicate or near-duplicate fix bullets.",
+    )
+    parser.add_argument(
+        "--max-fix-similarity",
+        type=float,
+        default=0.86,
+        help="Maximum allowed normalized SequenceMatcher similarity between two fix bullets.",
     )
     return parser.parse_args()
 
@@ -78,6 +93,8 @@ def validate_rows(
     eval_hashes: set[str],
     validate_assistant_scorecard,
     check_quote_faithfulness: bool = False,
+    check_distinct_fixes: bool = False,
+    max_fix_similarity: float = 0.86,
 ) -> None:
     if check_quote_faithfulness:
         from review import quote_faithfulness_issues
@@ -117,6 +134,11 @@ def validate_rows(
             raise ValueError(f"{row_id} overlaps final eval set by transcript hash")
         assistant = str(messages[2].get("content") or "")
         validate_assistant_scorecard(assistant)
+        if check_distinct_fixes:
+            issues = fix_distinctness_issues(assistant, max_similarity=max_fix_similarity)
+            if issues:
+                formatted = "; ".join(issues[:3])
+                raise ValueError(f"{row_id} assistant fix-distinctness failed: {formatted}")
         if check_quote_faithfulness:
             issues = quote_faithfulness_issues(assistant, transcript)
             if issues:
@@ -143,6 +165,42 @@ def count_middle_bullets(assistant: str) -> int:
     if len(labels) < 2:
         return 0
     return len(labels[1:-1])
+
+
+def fix_distinctness_issues(assistant: str, *, max_similarity: float = 0.86) -> list[str]:
+    fixes = fix_bullet_contents(assistant)
+    issues = []
+    for left_index, left in enumerate(fixes):
+        for right_index, right in enumerate(fixes[left_index + 1 :], start=left_index + 2):
+            left_norm = normalize_fix_text(left)
+            right_norm = normalize_fix_text(right)
+            if not left_norm or not right_norm:
+                continue
+            similarity = SequenceMatcher(None, left_norm, right_norm).ratio()
+            if left_norm == right_norm or similarity >= max_similarity:
+                issues.append(
+                    f"Fix {left_index + 1} and Fix {right_index} are too similar "
+                    f"({similarity:.2f}): {left!r} / {right!r}"
+                )
+    return issues
+
+
+def fix_bullet_contents(assistant: str) -> list[str]:
+    contents = []
+    for line in assistant.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("- ") or ":" not in stripped:
+            continue
+        label, content = stripped[2:].split(":", 1)
+        if label.strip().startswith("Fix "):
+            contents.append(content.strip())
+    return contents
+
+
+def normalize_fix_text(text: str) -> str:
+    text = text.lower().replace("’", "'")
+    text = re.sub(r"[^a-z0-9']+", " ", text)
+    return " ".join(text.split())
 
 
 def format_fix_counts(counts: Counter[int]) -> str:
