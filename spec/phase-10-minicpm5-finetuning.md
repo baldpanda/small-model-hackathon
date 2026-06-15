@@ -236,8 +236,10 @@ Current candidate artifacts:
 - v10 deliberately excluded noisy `keep the direction clear` style augment targets and used a smaller curated supplement focused on explicit actor/action/object wording.
 - v11 full run: `runs/full-v11-story-truth/adapter_final`, 193 train rows, 26 validation rows, 3 epochs, effective batch size 8, learning rate `1e-4`, 75 optimizer steps.
 - v11 retained the v10 perspective rows and added 24 repeated story-truth rows for anecdote-to-meaning judgment.
+- v12 full run: `runs/full-v12-no-canary-repeat-noeval/adapter_final`, 135 train rows, 26 validation rows, 4 epochs, effective batch size 8, learning rate `1e-4`, 68 optimizer steps.
+- v12 excluded canary rows from training, cleared repeated augment weights, removed concrete Sarah/car prompt examples to avoid leakage, and skipped in-training eval after trainer eval OOM. Held-out generation and canary generation remain the product-quality checks.
 
-Ship gating should use generated outputs, not validation loss. The latest v11 adapter plus deterministic decoding and transcript-grounded cleaner passes the 24-row targeted canary set and the 15-row held-out deterministic gates for scorecard shape and quote faithfulness. It should be treated as the current shipping candidate for end-to-end app testing, with the caveat that fine-tuning alone did not solve every judgment issue; the guardrails are part of the candidate behavior.
+Ship gating should use generated outputs, not validation loss. The latest v12 adapter plus deterministic decoding and transcript-grounded cleaner passes the 15-row held-out deterministic gates for scorecard shape, quote faithfulness, and unrelated Sarah/car leakage, and passes the specific Toastmasters perseverance leakage canary that caught the v11 regression. It should be treated as the current shipping candidate for end-to-end app testing, with the caveat that fine-tuning alone did not solve every judgment issue; the guardrails are part of the candidate behavior.
 
 ## Privacy and Storage
 

@@ -48,6 +48,7 @@ def main() -> None:
         stats_rows=read_unique_csv(args.stats_csv, "stats"),
         eval_rows=read_csv(args.eval_csv) if args.eval_csv else [],
         augment_rows=read_augment_rows(args),
+        clear_augment_repeat=args.clear_augment_repeat,
         seed=args.seed,
         val_fraction=args.val_fraction,
         smoke_size=args.smoke_size,
@@ -74,6 +75,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-csv", type=Path, default=DEFAULT_EVAL_CSV)
     parser.add_argument("--augment-jsonl", type=Path, default=DEFAULT_AUGMENT_JSONL)
     parser.add_argument("--no-augment", action="store_true")
+    parser.add_argument(
+        "--clear-augment-repeat",
+        action="store_true",
+        help="Ignore repeat counts in augment rows so each targeted example appears once.",
+    )
+    parser.add_argument(
+        "--exclude-augment-canaries",
+        action="store_true",
+        help="Drop augment rows marked as canaries or whose quality/type contains 'canary'.",
+    )
+    parser.add_argument("--exclude-augment-quality", action="append", default=[])
+    parser.add_argument("--exclude-augment-type", action="append", default=[])
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--val-fraction", type=float, default=VAL_FRACTION)
@@ -87,6 +100,7 @@ def prepare_records(
     stats_rows: dict[str, dict[str, Any]],
     eval_rows: list[dict[str, Any]],
     augment_rows: list[dict[str, Any]] | None = None,
+    clear_augment_repeat: bool = False,
     seed: int,
     val_fraction: float,
     smoke_size: int,
@@ -100,7 +114,7 @@ def prepare_records(
     rows = [build_sft_record(gold_rows[row_id], stats_rows[row_id]) for row_id in sorted(gold_rows, key=sort_key)]
     augment_records = [
         build_augmented_sft_record(row, index=index)
-        for index, row in enumerate(expand_augment_rows(augment_rows or []), start=1)
+        for index, row in enumerate(expand_augment_rows(augment_rows or [], clear_repeat=clear_augment_repeat), start=1)
     ]
     assert_unique_source_ids(rows + augment_records)
 
@@ -144,7 +158,12 @@ def read_augment_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
         if path == DEFAULT_AUGMENT_JSONL:
             return []
         raise FileNotFoundError(path)
-    return read_jsonl(path, "augment")
+    return filter_augment_rows(
+        read_jsonl(path, "augment"),
+        exclude_canaries=args.exclude_augment_canaries,
+        excluded_qualities=set(args.exclude_augment_quality),
+        excluded_types=set(args.exclude_augment_type),
+    )
 
 
 def read_jsonl(path: Path, label: str) -> list[dict[str, Any]]:
@@ -164,11 +183,36 @@ def read_jsonl(path: Path, label: str) -> list[dict[str, Any]]:
     return rows
 
 
-def expand_augment_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def filter_augment_rows(
+    rows: list[dict[str, Any]],
+    *,
+    exclude_canaries: bool,
+    excluded_qualities: set[str],
+    excluded_types: set[str],
+) -> list[dict[str, Any]]:
+    filtered = []
+    for row in rows:
+        quality = str(row.get("quality") or "")
+        augmentation_type = str(row.get("augmentation_type") or "")
+        if quality in excluded_qualities or augmentation_type in excluded_types:
+            continue
+        if exclude_canaries and is_augment_canary(row):
+            continue
+        filtered.append(row)
+    return filtered
+
+
+def is_augment_canary(row: dict[str, Any]) -> bool:
+    quality = str(row.get("quality") or "").lower()
+    augmentation_type = str(row.get("augmentation_type") or "").lower()
+    return parse_bool(row.get("canary", False)) or "canary" in quality or "canary" in augmentation_type
+
+
+def expand_augment_rows(rows: list[dict[str, Any]], *, clear_repeat: bool = False) -> list[dict[str, Any]]:
     expanded = []
     for index, row in enumerate(rows, start=1):
         base_id = str(row.get("id") or f"augment-{index:03d}").strip()
-        repeat_count = optional_int(row.get("repeat")) or 1
+        repeat_count = 1 if clear_repeat else optional_int(row.get("repeat")) or 1
         if repeat_count < 1:
             raise ValueError(f"Augment row {base_id} has invalid repeat={repeat_count}")
         for repeat_index in range(1, repeat_count + 1):

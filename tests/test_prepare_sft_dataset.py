@@ -5,6 +5,7 @@ import unittest
 from evals.prepare_sft_dataset import (
     build_sft_record,
     build_prompt_stats,
+    filter_augment_rows,
     normalize_gold_review,
     prepare_records,
     split_train_val,
@@ -271,6 +272,80 @@ class PrepareSftDatasetTests(unittest.TestCase):
         self.assertEqual({row["metadata"]["repeat_source_id"] for row in repeated}, {"perspective-short-001"})
         self.assertEqual({row["metadata"]["repeat_count"] for row in repeated}, {2})
         self.assertFalse(any(row["source_id"].startswith("perspective-short-001") for row in records["val"]))
+
+    def test_prepare_records_can_clear_augment_repeat_weights(self) -> None:
+        gold_rows = {}
+        stats_rows = {}
+        for index in range(1, 5):
+            row_id = str(index)
+            gold_rows[row_id] = {
+                "id": row_id,
+                "type": "best_man",
+                "quality": "weak",
+                "variant": "test",
+                "garble": "none",
+                "computed_duration_mmss": "1:00",
+                "computed_wpm": "120",
+                "computed_wpm_band": "medium (120-180)",
+                "computed_filler_per_min": "0",
+                "computed_filler_band": "low (0-1/min)",
+                "text": f"Transcript {index}",
+                "gold_review": "• Strength: Clear.\n• Fix: Sharpen one point.\n• Next run: Rehearse once.",
+            }
+            stats_rows[row_id] = {
+                "id": row_id,
+                "computed_word_count": "20",
+                "computed_filler_count": "0",
+                "computed_notable_fillers": "",
+                "computed_filler_counts_json": "{}",
+            }
+
+        records = prepare_records(
+            gold_rows=gold_rows,
+            stats_rows=stats_rows,
+            eval_rows=[],
+            augment_rows=[
+                {
+                    "id": "perspective-short-001",
+                    "type": "best_man",
+                    "quality": "perspective_preservation",
+                    "augmentation_type": "perspective_preservation_short",
+                    "canary": False,
+                    "repeat": 3,
+                    "text": "Maya lent me her laptop before my interview.",
+                    "gold_review": (
+                        "• Strength: Maya lending you her laptop is the proof.\n"
+                        "• Fix: Keep Maya as the person helping you.\n"
+                        "• Next run: Build around Maya lending you her laptop."
+                    ),
+                }
+            ],
+            clear_augment_repeat=True,
+            seed=42,
+            val_fraction=0.25,
+            smoke_size=2,
+        )
+
+        repeated = [row for row in records["train"] if row["source_id"].startswith("perspective-short-001")]
+        self.assertEqual([row["source_id"] for row in repeated], ["perspective-short-001"])
+        self.assertNotIn("repeat_source_id", repeated[0]["metadata"])
+
+    def test_filter_augment_rows_can_exclude_canary_rows(self) -> None:
+        rows = [
+            {"id": "kept", "quality": "perspective_preservation", "augmentation_type": "perspective"},
+            {"id": "flagged", "quality": "perspective_preservation", "canary": True},
+            {"id": "quality", "quality": "semantic_canary"},
+            {"id": "type", "augmentation_type": "story_truth_canary"},
+        ]
+
+        filtered = filter_augment_rows(
+            rows,
+            exclude_canaries=True,
+            excluded_qualities=set(),
+            excluded_types=set(),
+        )
+
+        self.assertEqual([row["id"] for row in filtered], ["kept"])
 
     def test_split_train_val_uses_stratified_groups(self) -> None:
         rows = [

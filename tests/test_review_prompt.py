@@ -224,8 +224,11 @@ class ReviewPromptTests(unittest.TestCase):
             {"word_count": 10, "filler_count": 0},
         )
 
-        self.assertIn('"Sarah lent me her car" becomes "Sarah lent you her car"', messages[0]["content"])
-        self.assertIn('"I lent Sarah my car" becomes "you lent Sarah your car"', messages[0]["content"])
+        self.assertIn('when someone else helps "me"', messages[0]["content"])
+        self.assertIn('when "I" help someone else', messages[0]["content"])
+        self.assertIn("Keep the original actor, recipient, and owned object", messages[0]["content"])
+        self.assertNotIn("Sarah lent me her car", messages[0]["content"])
+        self.assertNotIn("Sarah lent you her car", messages[0]["content"])
 
     def test_review_generate_kwargs_include_repetition_guardrails(self) -> None:
         class FakeTokenizer:
@@ -495,6 +498,24 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertNotIn("You lent her car", cleaned)
         self.assertNotIn("you lent her car", cleaned)
 
+    def test_clean_review_output_corrects_named_lending_wrong_owner_after_you(self) -> None:
+        transcript = "Maya lent me her laptop for the weekend so I could finish my portfolio."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: Maya lent you your laptop so you finished your portfolio.",
+                    "- Fix 1: Keep that laptop story.",
+                    "- Next run: Start with Maya lending you your laptop.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Maya lent you her laptop so you finished your portfolio", cleaned)
+        self.assertIn("Start with Maya lent you her laptop", cleaned)
+        self.assertNotIn("Maya lent you your laptop", cleaned)
+        self.assertNotIn("Maya lending you your laptop", cleaned)
+
     def test_clean_review_output_corrects_named_buying_perspective_flip(self) -> None:
         transcript = "Aisha bought me coffee with her last five pounds before my interview."
         cleaned = clean_review_output(
@@ -513,6 +534,24 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn("Say Aisha bought you coffee", cleaned)
         self.assertNotIn("You bought me coffee", cleaned)
         self.assertNotIn("you bought you coffee", cleaned)
+
+    def test_clean_review_output_corrects_speaker_to_other_buying_gerund(self) -> None:
+        transcript = "I bought Aisha coffee with my last five pounds before her interview."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: Buying Aisha coffee before the interview is specific.",
+                    "- Fix 1: Keep the coffee story.",
+                    "- Next run: Start by buying Aisha coffee.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("you bought Aisha coffee before the interview", cleaned)
+        self.assertIn("Start by you bought Aisha coffee", cleaned)
+        self.assertNotIn("Buying Aisha coffee", cleaned)
+        self.assertNotIn("buying Aisha coffee", cleaned)
 
     def test_clean_review_output_corrects_named_application_perspective_flip(self) -> None:
         transcript = "Mina rewrote my application the night before it was due."
@@ -546,6 +585,24 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn("you gave Ravi your spare room for a week", cleaned)
         self.assertNotIn("I gave Ravi my spare room", cleaned)
 
+    def test_clean_review_output_corrects_speaker_to_other_lending_missing_recipient(self) -> None:
+        transcript = "I lent Maya my laptop before her interview."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: You lent your laptop so Maya could answer.",
+                    "- Fix 1: Keep lending your laptop as the proof.",
+                    "- Next run: Open with you lent your laptop.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("you lent Maya your laptop so Maya could answer", cleaned)
+        self.assertIn("Keep you lent Maya your laptop as the proof", cleaned)
+        self.assertNotIn("You lent your laptop", cleaned)
+        self.assertNotIn("lending your laptop", cleaned)
+
     def test_clean_review_output_corrects_plural_object_pronoun_to_names(self) -> None:
         transcript = "I gave Jess and Sam my van for moving weekend."
         cleaned = clean_review_output(
@@ -578,6 +635,23 @@ class ReviewPromptTests(unittest.TestCase):
 
         self.assertIn("Joe would do anything for everyone", cleaned)
         self.assertNotIn("wouldn't do anything", cleaned)
+
+    def test_clean_review_output_corrects_covered_shift_birthday_mixup(self) -> None:
+        transcript = "Tom covered my shift the night my daughter was born."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: Tom covers her birth day perfectly.",
+                    "- Fix 1: Keep that detail.",
+                    "- Next run: Say Tom covered her birth day, then stop.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Tom covered your shift perfectly", cleaned)
+        self.assertIn("Say Tom covered your shift, then stop", cleaned)
+        self.assertNotIn("birth day", cleaned)
 
     def test_clean_review_output_corrects_observed_lovely_bridesmaids_flip(self) -> None:
         transcript = "And the bridesmaids, doesn't everyone look lovely today."

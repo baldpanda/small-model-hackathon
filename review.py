@@ -297,7 +297,9 @@ def _transcript_perspective_events(transcript: str) -> list[dict[str, Any]]:
                 match.group(0),
                 [
                     rf"\b{re.escape(actor_text)}\s+lent\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b{re.escape(actor_text)}\s+lent\s+you\s+(?:my|your)\s+{re.escape(thing)}\b",
                     rf"\b{re.escape(actor_text)}\s+lending\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b{re.escape(actor_text)}\s+lending\s+you\s+(?:my|your)\s+{re.escape(thing)}\b",
                     rf"\b(?:you\s+)?lent\s+(?:him|her|them|your|my)\s+{re.escape(thing)}\b",
                     rf"\blending\s+(?:my|your)\s+{re.escape(thing)}\b",
                 ],
@@ -319,7 +321,9 @@ def _transcript_perspective_events(transcript: str) -> list[dict[str, Any]]:
                 match.group(0),
                 [
                     rf"\b{re.escape(actor_text)}\s+gave\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b{re.escape(actor_text)}\s+gave\s+you\s+(?:my|your)\s+{re.escape(thing)}\b",
                     rf"\b{re.escape(actor_text)}\s+giving\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b{re.escape(actor_text)}\s+giving\s+you\s+(?:my|your)\s+{re.escape(thing)}\b",
                     rf"\b(?:you\s+)?gave\s+(?:him|her|them|your|my)\s+{re.escape(thing)}\b",
                     rf"\bgiving\s+(?:my|your)\s+{re.escape(thing)}\b",
                 ],
@@ -353,6 +357,8 @@ def _transcript_perspective_events(transcript: str) -> list[dict[str, Any]]:
                     r"\byou\s+covered\s+(?:his|her|their|my)\s+shift\b",
                     rf"\b{re.escape(actor_text)}\s+covered\s+my\s+shift\b",
                     rf"\b{re.escape(actor_text)}\s+covers\s+your\b",
+                    rf"\b{re.escape(actor_text)}\s+covers?\s+(?:his|her|their|my|your)\s+birth\s+day\b",
+                    rf"\b{re.escape(actor_text)}\s+covered\s+(?:his|her|their|my|your)\s+birth\s+day\b",
                 ],
             )
         )
@@ -415,6 +421,8 @@ def _transcript_perspective_events(transcript: str) -> list[dict[str, Any]]:
                 [
                     rf"\b{re.escape(person_text)}\s+lent\s+you\s+(?:his|her|their)\s+{re.escape(thing)}\b",
                     rf"\byou\s+lent\s+(?:him|her|them)\s+your\s+{re.escape(thing)}\b",
+                    rf"\byou\s+lent\s+your\s+{re.escape(thing)}\b",
+                    rf"\blending\s+your\s+{re.escape(thing)}\b",
                 ],
             )
         )
@@ -451,7 +459,11 @@ def _transcript_perspective_events(transcript: str) -> list[dict[str, Any]]:
                 bad_patterns = [rf"\b{re.escape(person_text)}\s+covered\s+your\s+shift\b"]
             else:
                 corrected = f"you {verb} {person_text} {obj}"
-                bad_patterns = [rf"\b{re.escape(person_text)}\s+{verb}\s+you\s+{obj}\b"]
+                gerund = {"bought": "buying", "drove": "driving", "wrote": "writing"}[verb]
+                bad_patterns = [
+                    rf"\b{re.escape(person_text)}\s+{verb}\s+you\s+{obj}\b",
+                    rf"\b{gerund}\s+{re.escape(person_text)}\s+{obj}\b",
+                ]
             events.append(_perspective_event(corrected, match.group(0), bad_patterns))
 
     for match in re.finditer(rf"\bI\s+stayed\s+with\s+{person}\b", transcript, flags=re.IGNORECASE):
