@@ -11,7 +11,7 @@ This phase is documentation and cleanup only. It should not change the app's run
 The live app now uses two small models in one rehearsal workflow:
 
 - transcription with `CohereLabs/cohere-transcribe-03-2026`
-- review generation with `openbmb/MiniCPM5-1B` plus the published LoRA adapter `build-small-hackathon/minicpm5-speech-feedback-lora-v5`
+- review generation with `openbmb/MiniCPM5-1B` plus the published LoRA adapter `build-small-hackathon/minicpm5-speech-feedback-lora-v11`
 
 For submission, judges should be able to understand the model story quickly, duplicate the Space with the right gated-model access, and verify that the repository does not expose private data or secrets.
 
@@ -39,7 +39,7 @@ The README model attribution must include:
   - license: Apache-2.0
   - note that the live Space runs a fine-tuned LoRA adapter on top of this base model
 - Fine-tuned adapter:
-  - adapter page: `https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v5`
+  - adapter page: `https://huggingface.co/build-small-hackathon/minicpm5-speech-feedback-lora-v11`
   - describe it as the LoRA adapter trained and published for speech-feedback scorecards
 
 The README runtime section should explain:
@@ -105,7 +105,7 @@ Dead code, commented-out experiments, and debug files should be removed only whe
 - The README prominently states about 3B total parameters across both models.
 - Both model IDs are credited with links and Apache-2.0 license notes.
 - The Cohere transcription model is clearly marked as gated, with duplication instructions for judges.
-- The MiniCPM5 LoRA adapter is linked as `build-small-hackathon/minicpm5-speech-feedback-lora-v5`.
+- The MiniCPM5 LoRA adapter is linked as `build-small-hackathon/minicpm5-speech-feedback-lora-v11`.
 - The README states that the live Space runs the fine-tuned adapter.
 - The README explains ZeroGPU quota behavior for anonymous versus logged-in Hugging Face users.
 - The README includes the architecture flow from GPU transcription to CPU analysis to GPU review to scorecard.
