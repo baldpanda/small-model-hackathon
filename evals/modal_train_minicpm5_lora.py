@@ -82,6 +82,7 @@ def train_lora_remote(
     save_steps: int = 25,
     gradient_accumulation_steps: int = 2,
     learning_rate: float = 2e-4,
+    eval_strategy: str = "epoch",
 ) -> dict[str, Any]:
     import json
     from pathlib import Path
@@ -93,6 +94,7 @@ def train_lora_remote(
     from trl import SFTConfig, SFTTrainer
 
     validate_run_name(run_name)
+    validate_eval_strategy(eval_strategy)
     set_seed(42)
 
     output_dir = Path(REMOTE_VOLUME_DIR) / "runs" / run_name
@@ -101,7 +103,8 @@ def train_lora_remote(
     train_rows = load_message_rows(Path(REMOTE_VOLUME_DIR) / data_rel_path, limit=limit)
     val_rows = load_message_rows(Path(REMOTE_VOLUME_DIR) / val_rel_path) if val_rel_path else None
     train_dataset = Dataset.from_list([{"messages": row["messages"]} for row in train_rows])
-    eval_dataset = Dataset.from_list([{"messages": row["messages"]} for row in val_rows]) if val_rows else None
+    should_eval_during_train = bool(val_rows) and eval_strategy != "none"
+    eval_dataset = Dataset.from_list([{"messages": row["messages"]} for row in val_rows]) if should_eval_during_train else None
 
     tokenizer = AutoTokenizer.from_pretrained(base_model, use_fast=True, **hf_kwargs())
     if tokenizer.pad_token is None:
@@ -162,6 +165,9 @@ def train_lora_remote(
         config_kwargs["load_best_model_at_end"] = True
         config_kwargs["metric_for_best_model"] = "eval_loss"
         config_kwargs["greater_is_better"] = False
+        config_kwargs["per_device_eval_batch_size"] = 1
+        config_kwargs["eval_accumulation_steps"] = 1
+        config_kwargs["prediction_loss_only"] = True
     else:
         config_kwargs["save_strategy"] = "steps"
         config_kwargs["save_steps"] = save_steps
@@ -203,6 +209,8 @@ def train_lora_remote(
         "gradient_accumulation_steps": gradient_accumulation_steps,
         "effective_batch_size": 4 * gradient_accumulation_steps,
         "learning_rate": learning_rate,
+        "eval_strategy": eval_strategy,
+        "eval_during_train": eval_dataset is not None,
         "adapter_dir": str(adapter_dir.relative_to(REMOTE_VOLUME_DIR)),
         "assistant_mask_check": str((output_dir / "assistant_mask_check.json").relative_to(REMOTE_VOLUME_DIR)),
         "trainer_state": str((output_dir / "trainer_state.json").relative_to(REMOTE_VOLUME_DIR)),
@@ -225,6 +233,7 @@ def main(
     save_steps: int = 25,
     gradient_accumulation_steps: int = 2,
     learning_rate: float = 2e-4,
+    eval_strategy: str = "epoch",
 ) -> None:
     result = train_lora_remote.remote(
         run_name=run_name,
@@ -237,6 +246,7 @@ def main(
         save_steps=save_steps,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=learning_rate,
+        eval_strategy=eval_strategy,
     )
     print(result)
 
@@ -358,3 +368,8 @@ def hf_kwargs() -> dict[str, str]:
 def validate_run_name(run_name: str) -> None:
     if not run_name or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in run_name):
         raise ValueError("run_name may only contain letters, numbers, underscores, and hyphens")
+
+
+def validate_eval_strategy(eval_strategy: str) -> None:
+    if eval_strategy not in {"epoch", "none"}:
+        raise ValueError("eval_strategy must be 'epoch' or 'none'")
