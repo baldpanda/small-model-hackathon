@@ -42,7 +42,7 @@ Phase 8 does not include:
 
 - The user can record up to two minutes of rehearsal audio.
 - The browser countdown and app copy should say two minutes, not one minute.
-- When the browser countdown reaches two minutes, it should click the active audio Stop control before resetting countdown state so the recording does not continue past the pilot window.
+- When the browser countdown reaches two minutes, it should stop the active browser `MediaRecorder` before resetting countdown state so mobile recordings do not continue past the pilot window.
 - Recordings under 10 seconds should not call the GPU-decorated processing path.
 - Too-short recordings should return a friendly message such as: "That was a little short. Ready when you are to practise the speech."
 - Recordings over 120 seconds should not call the GPU-decorated processing path.
@@ -97,7 +97,7 @@ The app should log and display the requested GPU duration alongside actual proce
 - A recording over 120 seconds returns a clear limit message and does not request GPU work.
 - A valid 10-to-120-second recording follows the existing end-to-end flow.
 - The UI countdown and visible app copy describe a two-minute limit.
-- The browser timeout path stops the active recording before clearing its saved audio button reference.
+- The browser timeout path stops the active `MediaRecorder` directly, with the audio Stop control used only as a fallback.
 - The status output includes actual processing timings and the requested GPU budget.
 - The dynamic GPU duration is clamped between 15 and 30 seconds.
 - The current timing and filler tests still pass.
