@@ -54,6 +54,7 @@ Required behavior:
 - The Record control is visually distinct from the Review speech button — a different colour family and silhouette — so the input action and the commit action do not compete for attention.
 - Post-recording editing controls (waveform trim, download, clear-X) are hidden. The user either commits the take with Review speech or starts over with Try again; there is no in-between editing step.
 - A Try again button sits alongside Review speech. Activating it clears the current recording and resets the transcript, speech feedback, timing feedback, filler feedback, and status panels to their initial placeholder state so the user can record again immediately.
+- Try again must also work after recording has stopped but before Review speech is clicked: the waveform should clear, the recording timer/status should return to its initial state, and Review speech should become disabled until a new recording exists.
 
 ## Acceptance Criteria
 
