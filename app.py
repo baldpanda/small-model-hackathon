@@ -83,6 +83,7 @@ COUNTDOWN_HEAD = f"""
   let timerId = null;
   let secondsLeft = limitSeconds;
   let lastButton = null;
+  let ignoreNextAudioClick = false;
 
   const formatSeconds = (value) => {{
     const minutes = Math.floor(value / 60);
@@ -107,10 +108,29 @@ COUNTDOWN_HEAD = f"""
     updateCountdown(message ?? `Recording limit: ${{formatSeconds(limitSeconds)}}`);
   }};
 
-  const stopRecording = () => {{
-    if (lastButton) {{
-      lastButton.click();
+  const buttonLabel = (button) => (button.getAttribute("aria-label") || button.innerText || "").toLowerCase();
+
+  const findStopButton = () => {{
+    const root = document.querySelector("#speech-audio");
+    if (!root) {{
+      return null;
     }}
+
+    return Array.from(root.querySelectorAll("button")).find((button) => buttonLabel(button).includes("stop")) ?? null;
+  }};
+
+  const stopRecording = () => {{
+    const button = findStopButton() ?? lastButton;
+    if (!button) {{
+      return false;
+    }}
+
+    ignoreNextAudioClick = true;
+    button.click();
+    window.setTimeout(() => {{
+      ignoreNextAudioClick = false;
+    }}, 0);
+    return true;
   }};
 
   const startTimer = (button) => {{
@@ -125,8 +145,12 @@ COUNTDOWN_HEAD = f"""
     timerId = window.setInterval(() => {{
       secondsLeft -= 1;
       if (secondsLeft <= 0) {{
-        stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Recording stopped. Review when ready.`);
-        stopRecording();
+        const stopped = stopRecording();
+        if (stopped) {{
+          stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Recording stopped. Review when ready.`);
+        }} else {{
+          stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Press Stop, then review when ready.`);
+        }}
         return;
       }}
 
@@ -147,8 +171,13 @@ COUNTDOWN_HEAD = f"""
         return;
       }}
 
+      if (ignoreNextAudioClick) {{
+        ignoreNextAudioClick = false;
+        return;
+      }}
+
       window.setTimeout(() => {{
-        const label = (button.getAttribute("aria-label") || button.innerText || "").toLowerCase();
+        const label = buttonLabel(button);
         if (label.includes("record") || label.includes("stop")) {{
           if (timerId) {{
             stopTimer("Recording stopped. Review when ready.");
