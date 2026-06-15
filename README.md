@@ -4,6 +4,20 @@ sdk: gradio
 sdk_version: "6.17.3"
 app_file: app.py
 python_version: "3.12"
+tags:
+  - build-small-hackathon
+  - backyard-ai
+  - track:backyard
+  - off-the-grid
+  - achievement:offgrid
+  - well-tuned
+  - achievement:welltuned
+  - off-brand
+  - achievement:offbrand
+  - sharing-is-caring
+  - achievement:sharing
+  - field-notes
+  - achievement:fieldnotes
 ---
 
 # Best Man Speech Coach
@@ -14,7 +28,7 @@ The app reviews structure, pacing, and filler habits so the next run has one or 
 **Model budget:** about 3B parameters total across both models. This is a small-model hackathon project, and the small combined budget is part of the build.
 
 - Live Space: [build-small-hackathon/best-man-speech-practice](https://huggingface.co/spaces/build-small-hackathon/best-man-speech-practice)
-- Demo video: TODO
+- Demo video: [YouTube](https://www.youtube.com/watch?v=w7s4LjYW89A)
 
 ## Models
 
@@ -84,6 +98,8 @@ Both external models used by the app are Apache-2.0 licensed:
 This repository currently has no license file. Treat the repository code, specs, and assets as unlicensed unless a license is added later.
 
 ## Trace Sanitization
+
+A sanitized snapshot of the Codex traces from this build is published as a Hugging Face dataset for the hackathon's "Sharing is Caring" track: [`build-small-hackathon/best-man-speech-codex-traces`](https://huggingface.co/datasets/build-small-hackathon/best-man-speech-codex-traces). The dataset contains the reviewed traces; the workflow below is what produced them.
 
 Codex trace files can contain prompts, command output, local paths, secrets, private code, and personal details. Keep raw traces under `traces/raw/` and write reviewed copies under `traces/sanitized/`; the whole `traces/` directory is ignored by git.
 
