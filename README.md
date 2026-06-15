@@ -28,7 +28,7 @@ The app reviews structure, pacing, and filler habits so the next run has one or 
 **Model budget:** about 3B parameters total across both models. This is a small-model hackathon project, and the small combined budget is part of the build.
 
 - Live Space: [build-small-hackathon/best-man-speech-practice](https://huggingface.co/spaces/build-small-hackathon/best-man-speech-practice)
-- Demo video: TODO
+- Demo video: [YouTube](https://www.youtube.com/watch?v=w7s4LjYW89A)
 
 ## Models
 
