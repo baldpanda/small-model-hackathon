@@ -1,4 +1,5 @@
 import html
+import json
 import logging
 import random
 import time
@@ -39,6 +40,15 @@ SPEECH_FEEDBACK_PENDING = "_The honest review lands once the coach has heard you
 TIMING_FEEDBACK_PENDING = "_Pacing notes land after the transcript._"
 FILLER_FEEDBACK_PENDING = '<div class="chip-empty">Crutch-word count lands after the transcript.</div>'
 COMPLETION_STATUS = "All done — go raise that glass."
+INITIAL_STATUS_HTML = '<p class="status-msg">Glass raised — ready when you are.</p>'
+INITIAL_TRANSCRIPT_HTML = (
+    '<div class="transcript-paper transcript-paper--empty">'
+    "Your transcript will land here once we've heard the recording."
+    "</div>"
+)
+INITIAL_TIMING_HTML = '<p class="pace-note">Pacing notes land here after the recording.</p>'
+INITIAL_FILLER_HTML = '<div class="chip-empty">Crutch-word count lands here after the recording.</div>'
+INITIAL_FEEDBACK_MARKDOWN = "_The honest review will land here once the coach has heard you out._"
 
 CONFETTI_COLORS = ("#bf8a3a", "#7a2636", "#183d34", "#fff9ec", "#efe3ce")
 CONFETTI_PIECES = 28
@@ -75,6 +85,29 @@ HERO_RINGS_SVG = (
 def _format_clock_seconds(seconds: int) -> str:
     minutes, remaining_seconds = divmod(seconds, 60)
     return f"{minutes}:{remaining_seconds:02d}"
+
+
+INITIAL_RECORDING_STATUS_HTML = (
+    f"<div id='recording-status'>Recording limit: {_format_clock_seconds(MAX_RECORDING_SECONDS)}</div>"
+)
+TRY_AGAIN_RESET_VALUES = json.dumps(
+    [
+        None,
+        INITIAL_RECORDING_STATUS_HTML,
+        INITIAL_TRANSCRIPT_HTML,
+        INITIAL_FEEDBACK_MARKDOWN,
+        INITIAL_TIMING_HTML,
+        INITIAL_FILLER_HTML,
+        INITIAL_STATUS_HTML,
+        {"__type__": "update", "interactive": False},
+    ]
+)
+TRY_AGAIN_RESET_JS = f"""
+() => {{
+  window.rehearsalResetTimer?.();
+  return {TRY_AGAIN_RESET_VALUES};
+}}
+"""
 
 COUNTDOWN_HEAD = f"""
 <script>
@@ -119,6 +152,11 @@ COUNTDOWN_HEAD = f"""
     secondsLeft = limitSeconds;
     lastButton = null;
     updateCountdown(message ?? `Recording limit: ${{formatSeconds(limitSeconds)}}`);
+  }};
+
+  const resetRecordingTimer = () => {{
+    limitStopPending = false;
+    stopTimer(`Recording limit: ${{formatSeconds(limitSeconds)}}`);
   }};
 
   const buttonLabel = (button) => (
@@ -326,6 +364,7 @@ COUNTDOWN_HEAD = f"""
   }};
 
   installMediaRecorderLimit();
+  window.rehearsalResetTimer = resetRecordingTimer;
   window.addEventListener("load", installMediaRecorderLimit);
   window.addEventListener("load", wireAudioButtons);
   window.addEventListener("load", watchCompletion);
@@ -597,10 +636,6 @@ def _clear_outputs(status: str) -> tuple[str, str, str, str, str]:
     return "", "", "", "", format_status_html(status)
 
 
-def _reset_rehearsal() -> tuple[None, str, str, str, str, str]:
-    return (None, *_clear_outputs("Glass raised — ready when you are."))
-
-
 def process_rehearsal(audio_path: str | None) -> Iterator[tuple[str, str, str, str, str]]:
     if not audio_path:
         yield _clear_outputs(f"Record a speech first. We accept run-throughs from {RECORDING_WINDOW_LABEL}.")
@@ -703,7 +738,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
                     ),
                 )
                 countdown = gr.HTML(
-                    f"<div id='recording-status'>Recording limit: {_format_clock_seconds(MAX_RECORDING_SECONDS)}</div>",
+                    INITIAL_RECORDING_STATUS_HTML,
                     label="Recording timer",
                 )
                 with gr.Row(elem_id="rehearsal-actions"):
@@ -724,7 +759,7 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             with gr.Column(scale=5, elem_classes=["scorecard-card"]):
                 gr.Markdown("## How it's going")
                 status_output = gr.HTML(
-                    value='<p class="status-msg">Glass raised — ready when you are.</p>',
+                    value=INITIAL_STATUS_HTML,
                     elem_id="status-output",
                 )
 
@@ -732,18 +767,14 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"]):
                 gr.Markdown("## What you said")
                 transcript_output = gr.HTML(
-                    value=(
-                        '<div class="transcript-paper transcript-paper--empty">'
-                        "Your transcript will land here once we've heard the recording."
-                        "</div>"
-                    ),
+                    value=INITIAL_TRANSCRIPT_HTML,
                     elem_id="transcript-output",
                 )
 
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
                 gr.Markdown("## Pacing")
                 timing_output = gr.HTML(
-                    value='<p class="pace-note">Pacing notes land here after the recording.</p>',
+                    value=INITIAL_TIMING_HTML,
                     elem_id="timing-output",
                     elem_classes=["score-output"],
                 )
@@ -752,18 +783,18 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
             with gr.Column(scale=6, elem_classes=["scorecard-card", "metric-panel"]):
                 gr.Markdown("## Crutch words")
                 filler_output = gr.HTML(
-                    value='<div class="chip-empty">Crutch-word count lands here after the recording.</div>',
+                    value=INITIAL_FILLER_HTML,
                     elem_classes=["score-output"],
                 )
 
             with gr.Column(scale=6, elem_classes=["scorecard-card", "result-panel"], elem_id="review-card"):
                 gr.Markdown("## The honest review")
                 feedback_output = gr.Markdown(
-                    value="_The honest review will land here once the coach has heard you out._",
+                    value=INITIAL_FEEDBACK_MARKDOWN,
                     elem_classes=["score-output"],
                 )
 
-        transcribe_button.click(
+        review_event = transcribe_button.click(
             fn=process_rehearsal,
             inputs=audio_input,
             outputs=[transcript_output, feedback_output, timing_output, filler_output, status_output],
@@ -771,9 +802,9 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
 
         audio_input.change(
             fn=None,
-            inputs=None,
+            inputs=audio_input,
             outputs=transcribe_button,
-            js="() => ({ __type__: 'update', interactive: true })",
+            js="(audio) => ({ __type__: 'update', interactive: Boolean(audio) })",
         )
 
         audio_input.clear(
@@ -790,20 +821,20 @@ with gr.Blocks(title="Best Man Speech Coach", css=CUSTOM_CSS) as demo:
         )
 
         try_again_button.click(
-            fn=_reset_rehearsal,
+            fn=None,
             inputs=None,
             outputs=[
                 audio_input,
+                countdown,
                 transcript_output,
                 feedback_output,
                 timing_output,
                 filler_output,
                 status_output,
+                transcribe_button,
             ],
-        ).then(
-            fn=lambda: gr.update(interactive=False),
-            inputs=None,
-            outputs=transcribe_button,
+            js=TRY_AGAIN_RESET_JS,
+            cancels=[review_event],
         )
 
 
