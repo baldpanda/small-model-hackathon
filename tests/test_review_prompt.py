@@ -195,6 +195,7 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn("A slow pace under 120 wpm is worth addressing", messages[0]["content"])
         self.assertIn("Do not make multiple fixes about the same example", messages[0]["content"])
         self.assertIn("Do not repeat feedback in different words", messages[0]["content"])
+        self.assertIn("name the sharper truth the anecdote proves", messages[0]["content"])
         self.assertIn("Add more fixes only when they are distinct", messages[1]["content"])
         self.assertIn("Do not repeat feedback", messages[1]["content"])
         self.assertIn("- Pace: 97.4 wpm (slow (<120))", messages[1]["content"])
@@ -217,12 +218,24 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn("Use double quotes only for exact spans from the transcript", messages[0]["content"])
         self.assertIn("Only use double quotes for exact transcript spans", messages[1]["content"])
 
+    def test_build_messages_instructs_first_person_ownership_conversion(self) -> None:
+        messages = _build_messages(
+            "Sarah lent me her car. I lent Adam my jacket.",
+            {"word_count": 10, "filler_count": 0},
+        )
+
+        self.assertIn('"Sarah lent me her car" becomes "Sarah lent you her car"', messages[0]["content"])
+        self.assertIn('"I lent Sarah my car" becomes "you lent Sarah your car"', messages[0]["content"])
+
     def test_review_generate_kwargs_include_repetition_guardrails(self) -> None:
         class FakeTokenizer:
             eos_token_id = 123
 
         generate_kwargs = _review_generate_kwargs(FakeTokenizer())
 
+        self.assertFalse(generate_kwargs["do_sample"])
+        self.assertNotIn("temperature", generate_kwargs)
+        self.assertNotIn("top_p", generate_kwargs)
         self.assertEqual(generate_kwargs["repetition_penalty"], 1.2)
         self.assertEqual(generate_kwargs["no_repeat_ngram_size"], 0)
         self.assertEqual(generate_kwargs["pad_token_id"], 123)
@@ -352,6 +365,28 @@ class ReviewPromptTests(unittest.TestCase):
         )
         self.assertTrue(is_valid_scorecard_shape(cleaned))
 
+    def test_clean_review_output_adds_fallback_next_run_when_missing(self) -> None:
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The family detail is warm.",
+                    "- Fix 1: Lead with the family detail before the broader praise.",
+                ]
+            )
+        )
+
+        self.assertEqual(
+            cleaned,
+            "\n".join(
+                [
+                    "- Strength: The family detail is warm.",
+                    "- Fix 1: Lead with the family detail before the broader praise.",
+                    "- Next run: Try that opening once and keep the rest unchanged.",
+                ]
+            ),
+        )
+        self.assertTrue(is_valid_scorecard_shape(cleaned))
+
     def test_clean_review_output_strips_thinking_and_normalizes_plain_labels(self) -> None:
         cleaned = clean_review_output(
             "\n".join(
@@ -408,6 +443,240 @@ class ReviewPromptTests(unittest.TestCase):
             ),
         )
         self.assertTrue(is_valid_scorecard_shape(cleaned))
+
+    def test_clean_review_output_preserves_lent_me_ownership(self) -> None:
+        transcript = "Joe is kind. Like one time, he lent me his car for a month and did not ask for petrol money."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The car story — lending my car for a month — proves Joe is generous.",
+                    "- Fix 1: Lead with the car story.",
+                    "- Next run: Open on lent my car for a month.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("he lent you his car for a month", cleaned)
+        self.assertNotIn("lending my car", cleaned)
+        self.assertNotIn("lent my car", cleaned)
+
+    def test_clean_review_output_preserves_lent_me_ownership_with_actor_prefix(self) -> None:
+        transcript = "Joe is kind. Like one time, he lent me his car for a month and did not ask for petrol money."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The line is he lent my car without asking for petrol money.",
+                    "- Fix 1: Lead with the car story.",
+                    "- Next run: Open on the car story.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("he lent you his car without asking for petrol money", cleaned)
+        self.assertNotIn("he he lent", cleaned)
+
+    def test_clean_review_output_corrects_named_lending_perspective_flip(self) -> None:
+        transcript = "Sarah lent me her car before my interview and said she could walk."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: You lent her car before an interview and walked through it.",
+                    "- Fix 1: Say you lent her car so I know how generous you were.",
+                    "- Next run: Keep the lending story.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Sarah lent you her car before an interview", cleaned)
+        self.assertIn("Say Sarah lent you her car", cleaned)
+        self.assertNotIn("You lent her car", cleaned)
+        self.assertNotIn("you lent her car", cleaned)
+
+    def test_clean_review_output_corrects_named_buying_perspective_flip(self) -> None:
+        transcript = "Aisha bought me coffee with her last five pounds before my interview."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: You bought me coffee with her last five pounds.",
+                    "- Fix 1: Lead on buying you coffee rather than praising honesty.",
+                    "- Next run: Say you bought you coffee.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Aisha bought you coffee with her last five pounds", cleaned)
+        self.assertIn("Lead on Aisha bought you coffee rather than praising honesty", cleaned)
+        self.assertIn("Say Aisha bought you coffee", cleaned)
+        self.assertNotIn("You bought me coffee", cleaned)
+        self.assertNotIn("you bought you coffee", cleaned)
+
+    def test_clean_review_output_corrects_named_application_perspective_flip(self) -> None:
+        transcript = "Mina rewrote my application the night before it was due."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: Mina rewrote my application the night before it was due.",
+                    "- Fix 1: Lead on the comments.",
+                    "- Next run: Start with Mina rewriting the application.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Mina rewrote your application the night before it was due", cleaned)
+        self.assertNotIn("Mina rewrote my application", cleaned)
+
+    def test_clean_review_output_corrects_speaker_to_other_room_perspective(self) -> None:
+        transcript = "I gave Ravi my spare room for a week."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: I gave Ravi my spare room for a week.",
+                    "- Fix 1: Keep the room story.",
+                    "- Next run: Start with the room.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("you gave Ravi your spare room for a week", cleaned)
+        self.assertNotIn("I gave Ravi my spare room", cleaned)
+
+    def test_clean_review_output_corrects_plural_object_pronoun_to_names(self) -> None:
+        transcript = "I gave Jess and Sam my van for moving weekend."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: You gave them your van.",
+                    "- Fix 1: Lead with giving them your van.",
+                    "- Next run: Start with I gave Jess and Sam my van.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("you gave Jess and Sam your van", cleaned)
+        self.assertNotIn("gave them your van", cleaned)
+        self.assertNotIn("I gave Jess and Sam my van", cleaned)
+
+    def test_clean_review_output_corrects_would_do_negation_flip(self) -> None:
+        transcript = "Joe's a top bloke. He'd do anything for everyone."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: This proves Joe wouldn't do anything for anyone.",
+                    "- Fix 1: Lead with one example.",
+                    "- Next run: Keep it short.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Joe would do anything for everyone", cleaned)
+        self.assertNotIn("wouldn't do anything", cleaned)
+
+    def test_clean_review_output_corrects_observed_lovely_bridesmaids_flip(self) -> None:
+        transcript = "And the bridesmaids, doesn't everyone look lovely today."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The bride is lovely.",
+                    "- Fix 1: The bridesmaids aren't looking lovely, so pick one memory.",
+                    "- Next run: Rehearse once.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("bridesmaids look lovely", cleaned)
+        self.assertNotIn("aren't looking lovely", cleaned)
+
+    def test_clean_review_output_corrects_observed_busking_typo(self) -> None:
+        transcript = "Will gave the last of his cash to a busker who'd had his guitar stolen."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The busking story is generous.",
+                    "- Fix 1: Cut the buskering story before the thank-you lines.",
+                    "- Next run: Rehearse once.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Cut the busking story", cleaned)
+        self.assertNotIn("buskering", cleaned)
+
+    def test_clean_review_output_corrects_observed_surnings_typo(self) -> None:
+        transcript = "We sat next to each other because our surnames were next to each other on the register."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The register-surnings story is specific.",
+                    "- Fix 1: Lead with the register-surnings detail.",
+                    "- Next run: Rehearse once.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("register-surnames", cleaned)
+        self.assertNotIn("surnings", cleaned)
+
+    def test_clean_review_output_corrects_observed_eating_detail_overstatement(self) -> None:
+        transcript = "When our dad was ill she made sure everyone had eaten before she thought about herself."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: That shows Nina cares enough to keep people alive.",
+                    "- Fix 1: One real memory would ground it.",
+                    "- Next run: End on the cracking open of the house while she holds someone.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("make sure everyone had eaten", cleaned)
+        self.assertIn("End on making sure everyone had eaten", cleaned)
+        self.assertNotIn("keep people alive", cleaned)
+        self.assertNotIn("cracking open of the house", cleaned)
+
+    def test_clean_review_output_expands_vague_car_loan_story_when_transcript_has_event(self) -> None:
+        transcript = "One time, he lent me his car for a month and did not ask for petrol money."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    "- Strength: The car loan story is useful.",
+                    "- Fix 1: Lead with the car tale.",
+                    "- Next run: Mention the car loan story once.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("story where he lent you his car", cleaned)
+        self.assertNotIn("car loan story", cleaned)
+        self.assertNotIn("car tale", cleaned)
+
+    def test_clean_review_output_removes_unfaithful_quotes_when_transcript_supplied(self) -> None:
+        transcript = "Hannah, you're getting a good one. Bit messy, but a good one."
+        cleaned = clean_review_output(
+            "\n".join(
+                [
+                    '- Strength: "Hannah... bit messy" is your turn.',
+                    "- Fix 1: Lead with the story.",
+                    "- Next run: Rehearse once.",
+                ]
+            ),
+            transcript=transcript,
+        )
+
+        self.assertIn("Hannah... bit messy is your turn", cleaned)
+        self.assertEqual(quote_faithfulness_issues(cleaned, transcript), [])
 
     def test_scorecard_shape_issues_require_final_next_run(self) -> None:
         issues = scorecard_shape_issues(

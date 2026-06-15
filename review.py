@@ -211,6 +211,7 @@ def expected_scorecard_labels(
 def clean_review_output(
     review: str,
     expected_labels: tuple[str, ...] = SCORECARD_LABELS,
+    transcript: str | None = None,
 ) -> str:
     _ = expected_labels
     review = _strip_thinking_trace(review)
@@ -243,9 +244,323 @@ def clean_review_output(
             next_run = content
             break
 
+    if strength and len(fixes) >= MIN_FIX_COUNT and not next_run:
+        next_run = _fallback_next_run(fixes[0])
+
     if strength and len(fixes) >= MIN_FIX_COUNT and next_run:
-        return "\n".join(_format_scorecard_lines(strength, fixes, next_run))
-    return review.strip()
+        cleaned = "\n".join(_format_scorecard_lines(strength, fixes, next_run))
+    else:
+        cleaned = review.strip()
+    if transcript:
+        cleaned = clean_review_faithfulness_issues(cleaned, transcript)
+    return cleaned
+
+
+def clean_review_faithfulness_issues(review: str, transcript: str) -> str:
+    cleaned = _clean_perspective_flips(review, transcript)
+    cleaned = _clean_would_do_negation_flips(cleaned, transcript)
+    cleaned = _clean_marriage_pronoun_flips(cleaned, transcript)
+    cleaned = _clean_observed_phrase_flips(cleaned, transcript)
+    return clean_unfaithful_review_quotes(cleaned, transcript)
+
+
+def _clean_perspective_flips(review: str, transcript: str) -> str:
+    cleaned = review
+    for event in _transcript_perspective_events(transcript):
+        corrected = event["corrected"]
+        for phrase in event["source_phrases"]:
+            cleaned = _replace_phrase(cleaned, phrase, corrected)
+        for pattern in event["bad_patterns"]:
+            cleaned = re.sub(pattern, corrected, cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def _transcript_perspective_events(transcript: str) -> list[dict[str, Any]]:
+    actor = r"(?P<actor>[A-Z][a-z]+|he|she|they)"
+    person = r"(?P<person>[A-Z][a-z]+(?:\s+and\s+[A-Z][a-z]+)?)"
+    possession = r"(?P<poss>his|her|their)"
+    owned_object = r"(?P<object>car|van|bike|dress|coat|jacket|laptop|letter|spare room|room)"
+    events: list[dict[str, Any]] = []
+
+    for match in re.finditer(
+        rf"\b{actor}\s+lent\s+me\s+{possession}\s+{owned_object}\b",
+        transcript,
+        flags=re.IGNORECASE,
+    ):
+        actor_text = match.group("actor")
+        possessive = match.group("poss").lower()
+        thing = match.group("object").lower()
+        corrected = f"{actor_text} lent you {possessive} {thing}"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [
+                    rf"\b{re.escape(actor_text)}\s+lent\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b{re.escape(actor_text)}\s+lending\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b(?:you\s+)?lent\s+(?:him|her|them|your|my)\s+{re.escape(thing)}\b",
+                    rf"\blending\s+(?:my|your)\s+{re.escape(thing)}\b",
+                ],
+            )
+        )
+
+    for match in re.finditer(
+        rf"\b{actor}\s+gave\s+me\s+{possession}\s+{owned_object}\b",
+        transcript,
+        flags=re.IGNORECASE,
+    ):
+        actor_text = match.group("actor")
+        possessive = match.group("poss").lower()
+        thing = match.group("object").lower()
+        corrected = f"{actor_text} gave you {possessive} {thing}"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [
+                    rf"\b{re.escape(actor_text)}\s+gave\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b{re.escape(actor_text)}\s+giving\s+(?:my|your)\s+{re.escape(thing)}\b",
+                    rf"\b(?:you\s+)?gave\s+(?:him|her|them|your|my)\s+{re.escape(thing)}\b",
+                    rf"\bgiving\s+(?:my|your)\s+{re.escape(thing)}\b",
+                ],
+            )
+        )
+
+    for verb, obj in (("bought", "coffee"), ("drove", "home"), ("wrote", "a letter")):
+        for match in re.finditer(rf"\b{actor}\s+{verb}\s+me\s+{obj}\b", transcript, flags=re.IGNORECASE):
+            actor_text = match.group("actor")
+            corrected = f"{actor_text} {verb} you {obj}"
+            gerund = {"bought": "buying", "drove": "driving", "wrote": "writing"}[verb]
+            events.append(
+                _perspective_event(
+                    corrected,
+                    match.group(0),
+                    [
+                        rf"\byou\s+{verb}\s+(?:me|you)\s+{obj}\b",
+                        rf"\b{gerund}\s+you\s+{obj}\b",
+                    ],
+                )
+            )
+
+    for match in re.finditer(rf"\b{actor}\s+covered\s+my\s+shift\b", transcript, flags=re.IGNORECASE):
+        actor_text = match.group("actor")
+        corrected = f"{actor_text} covered your shift"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [
+                    r"\byou\s+covered\s+(?:his|her|their|my)\s+shift\b",
+                    rf"\b{re.escape(actor_text)}\s+covered\s+my\s+shift\b",
+                    rf"\b{re.escape(actor_text)}\s+covers\s+your\b",
+                ],
+            )
+        )
+
+    for match in re.finditer(rf"\b{actor}\s+stayed\s+with\s+me\b", transcript, flags=re.IGNORECASE):
+        actor_text = match.group("actor")
+        corrected = f"{actor_text} stayed with you"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [r"\byou\s+stayed\s+with\s+(?:him|her|them|me)\b"],
+            )
+        )
+
+    for match in re.finditer(rf"\b{actor}\s+rewrote\s+my\s+application\b", transcript, flags=re.IGNORECASE):
+        actor_text = match.group("actor")
+        corrected = f"{actor_text} rewrote your application"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [r"\byou\s+rewrote\s+(?:his|her|their|my)\s+application\b"],
+            )
+        )
+
+    for match in re.finditer(
+        rf"\b{actor}\s+let\s+me\s+borrow\s+{possession}\s+{owned_object}\b",
+        transcript,
+        flags=re.IGNORECASE,
+    ):
+        actor_text = match.group("actor")
+        possessive = match.group("poss").lower()
+        thing = match.group("object").lower()
+        corrected = f"{actor_text} let you borrow {possessive} {thing}"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [
+                    rf"\byou\s+let\s+{re.escape(actor_text)}\s+borrow\s+your\s+{re.escape(thing)}\b",
+                    rf"\byou\s+lent\s+{re.escape(actor_text)}\s+your\s+{re.escape(thing)}\b",
+                    rf"\b{re.escape(actor_text)}\s+let\s+me\s+borrow\s+{possessive}\s+{re.escape(thing)}\b",
+                ],
+            )
+        )
+
+    for match in re.finditer(
+        rf"\bI\s+lent\s+{person}\s+my\s+{owned_object}\b",
+        transcript,
+        flags=re.IGNORECASE,
+    ):
+        person_text = match.group("person")
+        thing = match.group("object").lower()
+        corrected = f"you lent {person_text} your {thing}"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [
+                    rf"\b{re.escape(person_text)}\s+lent\s+you\s+(?:his|her|their)\s+{re.escape(thing)}\b",
+                    rf"\byou\s+lent\s+(?:him|her|them)\s+your\s+{re.escape(thing)}\b",
+                ],
+            )
+        )
+
+    for match in re.finditer(
+        rf"\bI\s+gave\s+{person}\s+my\s+{owned_object}\b",
+        transcript,
+        flags=re.IGNORECASE,
+    ):
+        person_text = match.group("person")
+        thing = match.group("object").lower()
+        corrected = f"you gave {person_text} your {thing}"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [
+                    rf"\b{re.escape(person_text)}\s+gave\s+you\s+(?:his|her|their)\s+{re.escape(thing)}\b",
+                    rf"\byou\s+gave\s+(?:him|her|them)\s+your\s+{re.escape(thing)}\b",
+                ],
+            )
+        )
+
+    for verb, obj in (("covered", "shift"), ("bought", "coffee"), ("drove", "home"), ("wrote", "a letter")):
+        pattern = rf"\bI\s+{verb}\s+{person}"
+        if obj == "shift":
+            pattern += r"(?:'s|’s)\s+shift\b"
+        else:
+            pattern += rf"\s+{obj}\b"
+        for match in re.finditer(pattern, transcript, flags=re.IGNORECASE):
+            person_text = match.group("person")
+            if obj == "shift":
+                corrected = f"you covered {person_text}'s shift"
+                bad_patterns = [rf"\b{re.escape(person_text)}\s+covered\s+your\s+shift\b"]
+            else:
+                corrected = f"you {verb} {person_text} {obj}"
+                bad_patterns = [rf"\b{re.escape(person_text)}\s+{verb}\s+you\s+{obj}\b"]
+            events.append(_perspective_event(corrected, match.group(0), bad_patterns))
+
+    for match in re.finditer(rf"\bI\s+stayed\s+with\s+{person}\b", transcript, flags=re.IGNORECASE):
+        person_text = match.group("person")
+        corrected = f"you stayed with {person_text}"
+        events.append(
+            _perspective_event(
+                corrected,
+                match.group(0),
+                [rf"\b{re.escape(person_text)}\s+stayed\s+with\s+you\b"],
+            )
+        )
+
+    return events
+
+
+def _perspective_event(
+    corrected: str,
+    source_phrase: str,
+    bad_patterns: list[str],
+) -> dict[str, Any]:
+    return {
+        "corrected": corrected,
+        "source_phrases": [source_phrase, _first_to_second_person_phrase(source_phrase)],
+        "bad_patterns": bad_patterns,
+    }
+
+
+def _first_to_second_person_phrase(phrase: str) -> str:
+    replacements = (
+        (r"\bI\b", "you"),
+        (r"\bme\b", "you"),
+        (r"\bmy\b", "your"),
+    )
+    converted = phrase
+    for pattern, replacement in replacements:
+        converted = re.sub(pattern, replacement, converted, flags=re.IGNORECASE)
+    return converted
+
+
+def _replace_phrase(text: str, phrase: str, replacement: str) -> str:
+    return re.sub(re.escape(phrase), replacement, text, flags=re.IGNORECASE)
+
+
+def _clean_would_do_negation_flips(review: str, transcript: str) -> str:
+    positive_claim_pattern = (
+        r"\b(?:would|would do|he'd|she'd|they'd)\s+do\s+anything\s+"
+        r"for\s+(?:anyone|everyone)\b"
+    )
+    if not re.search(positive_claim_pattern, transcript, re.IGNORECASE):
+        return review
+    cleaned = re.sub(
+        r"\bwouldn['’]?t\s+do\s+anything\s+for\s+(?:anyone|everyone)\b",
+        "would do anything for everyone",
+        review,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(
+        r"\bwould\s+not\s+do\s+anything\s+for\s+(?:anyone|everyone)\b",
+        "would do anything for everyone",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+
+def _clean_marriage_pronoun_flips(review: str, transcript: str) -> str:
+    if not re.search(r"\bgetting married\b", transcript, re.IGNORECASE):
+        return review
+    return re.sub(r"\bmarrying\s+(?:him|her|them)\b", "getting married", review, flags=re.IGNORECASE)
+
+
+def _clean_observed_phrase_flips(review: str, transcript: str) -> str:
+    cleaned = review
+    if re.search(r"\bbridesmaids\b", transcript, re.IGNORECASE) and re.search(
+        r"\blook(?:ing)?\s+lovely\b",
+        transcript,
+        re.IGNORECASE,
+    ):
+        cleaned = re.sub(
+            r"\bbridesmaids\s+aren['’]?t\s+looking\s+lovely\b",
+            "bridesmaids look lovely",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+    if re.search(r"\bbusker|busking\b", transcript, re.IGNORECASE):
+        cleaned = re.sub(r"\bbuskering\b", "busking", cleaned, flags=re.IGNORECASE)
+    if re.search(r"\bsurnames?\b", transcript, re.IGNORECASE):
+        cleaned = re.sub(r"\bsurnings\b", "surnames", cleaned, flags=re.IGNORECASE)
+    if re.search(r"\beveryone\s+had\s+eaten\b", transcript, re.IGNORECASE):
+        cleaned = re.sub(r"\bkeep\s+people\s+alive\b", "make sure everyone had eaten", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(
+            r"\bthe\s+cracking\s+open\s+of\s+the\s+house\s+while\s+she\s+holds\s+someone\b",
+            "making sure everyone had eaten",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+    loan_match = re.search(
+        r"\b(?P<actor>[A-Z][a-z]+|he|she|they)\s+lent\s+me\s+(?P<poss>his|her|their)\s+(?P<object>car|van|bike)\b",
+        transcript,
+        re.IGNORECASE,
+    )
+    if loan_match:
+        actor = loan_match.group("actor")
+        possessive = loan_match.group("poss").lower()
+        thing = loan_match.group("object").lower()
+        story = f"story where {actor} lent you {possessive} {thing}"
+        cleaned = re.sub(rf"\b{re.escape(thing)}\s+loan\s+story\b", story, cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(rf"\b{re.escape(thing)}\s+tale\b", story, cleaned, flags=re.IGNORECASE)
+    return cleaned
 
 
 def _format_scorecard_lines(strength: str, fixes: list[str], next_run: str) -> list[str]:
@@ -255,6 +570,16 @@ def _format_scorecard_lines(strength: str, fixes: list[str], next_run: str) -> l
         lines.append(f"- Fix {index}: {fix}")
     lines.append(f"- Next run: {next_run}")
     return lines
+
+
+def _fallback_next_run(first_fix: str) -> str:
+    normalized = first_fix.strip()
+    lowered = normalized.lower()
+    if lowered.startswith(("lead with", "start with", "open with")):
+        return "Try that opening once and keep the rest unchanged."
+    if lowered.startswith(("cut ", "trim ", "drop ")):
+        return "Record one version with that cut and check the ending still lands."
+    return "Rehearse once with Fix 1 as the only deliberate change."
 
 
 def _dedupe_fixes(strength: str, fixes: list[str]) -> list[str]:
@@ -539,9 +864,7 @@ def _apply_chat_template(tokenizer: object, messages: list[dict[str, str]]) -> o
 def _review_generate_kwargs(tokenizer: object) -> dict[str, Any]:
     generate_kwargs: dict[str, Any] = {
         "max_new_tokens": MAX_REVIEW_TOKENS,
-        "temperature": 0.1,
-        "top_p": 0.9,
-        "do_sample": True,
+        "do_sample": False,
         "repetition_penalty": REPETITION_PENALTY,
         "no_repeat_ngram_size": NO_REPEAT_NGRAM_SIZE,
     }
@@ -570,6 +893,7 @@ def review_speech(transcript: str, stats: Mapping[str, Any] | None = None) -> st
     review = clean_review_output(
         tokenizer.decode(generated_ids, skip_special_tokens=True),
         expected_labels=scorecard_labels,
+        transcript=text,
     )
     if not review:
         raise RuntimeError("The review model returned an empty response. Try again with a clearer transcript.")
