@@ -35,6 +35,10 @@ The app reviews structure, pacing, and filler habits so the next run has one or 
 - Blog post: [Best Man Speech Practice on Hugging Face](https://huggingface.co/blog/pjc43/best-man-speech-practice)
 - Social post: [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7472418080330260480/)
 
+## Team
+
+Solo build by [@pjc43](https://huggingface.co/pjc43), registered with the `build-small-hackathon` organisation.
+
 ## Models
 
 | Role | Model or artifact | License/status | Notes |
