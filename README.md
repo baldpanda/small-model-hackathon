@@ -30,6 +30,7 @@ The app reviews structure, pacing, and filler habits so the next run has one or 
 - Live Space: [build-small-hackathon/best-man-speech-practice](https://huggingface.co/spaces/build-small-hackathon/best-man-speech-practice)
 - Demo video: [YouTube](https://www.youtube.com/watch?v=w7s4LjYW89A)
 - Blog post: [Best Man Speech Practice on Hugging Face](https://huggingface.co/blog/pjc43/best-man-speech-practice)
+- Social post: [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7472418080330260480/)
 
 ## Models
 
