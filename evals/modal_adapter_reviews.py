@@ -112,6 +112,7 @@ def generate_adapter_reviews_remote(
             result["review"] = clean_review_output(
                 tokenizer.decode(generated_ids, skip_special_tokens=True),
                 expected_labels=scorecard_labels,
+                transcript=transcript,
             )
             result["scorecard_shape_issues"] = scorecard_shape_issues(
                 result["review"],

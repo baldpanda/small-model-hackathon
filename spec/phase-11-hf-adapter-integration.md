@@ -32,7 +32,7 @@ This phase turns the Modal-trained adapter artifact into an app-loadable model p
 Expected Space environment:
 
 ```text
-REVIEW_ADAPTER_ID=build-small-hackathon/minicpm5-speech-feedback-lora
+REVIEW_ADAPTER_ID=build-small-hackathon/minicpm5-speech-feedback-lora-v11
 HF_TOKEN=<secret if the adapter repo is private>
 ```
 
