@@ -80,10 +80,15 @@ COUNTDOWN_HEAD = f"""
 <script>
 (() => {{
   const limitSeconds = {MAX_RECORDING_SECONDS};
+  const limitMillis = limitSeconds * 1000;
   let timerId = null;
+  let timeoutId = null;
+  let timerStartedAt = 0;
   let secondsLeft = limitSeconds;
   let lastButton = null;
+  let activeRecorder = null;
   let ignoreNextAudioClick = false;
+  let limitStopPending = false;
 
   const formatSeconds = (value) => {{
     const minutes = Math.floor(value / 60);
@@ -98,17 +103,30 @@ COUNTDOWN_HEAD = f"""
     }}
   }};
 
-  const stopTimer = (message) => {{
+  const clearTimerHandles = () => {{
     if (timerId) {{
       window.clearInterval(timerId);
       timerId = null;
     }}
+    if (timeoutId) {{
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
+    }}
+  }};
+
+  const stopTimer = (message) => {{
+    clearTimerHandles();
     secondsLeft = limitSeconds;
     lastButton = null;
     updateCountdown(message ?? `Recording limit: ${{formatSeconds(limitSeconds)}}`);
   }};
 
-  const buttonLabel = (button) => (button.getAttribute("aria-label") || button.innerText || "").toLowerCase();
+  const buttonLabel = (button) => (
+    button.getAttribute("aria-label") ||
+    button.getAttribute("title") ||
+    button.innerText ||
+    ""
+  ).toLowerCase();
 
   const findStopButton = () => {{
     const root = document.querySelector("#speech-audio");
@@ -120,6 +138,15 @@ COUNTDOWN_HEAD = f"""
   }};
 
   const stopRecording = () => {{
+    if (activeRecorder && activeRecorder.state === "recording") {{
+      try {{
+        activeRecorder.stop();
+        return true;
+      }} catch (error) {{
+        console.warn("Could not stop active MediaRecorder", error);
+      }}
+    }}
+
     const button = findStopButton() ?? lastButton;
     if (!button) {{
       return false;
@@ -133,29 +160,101 @@ COUNTDOWN_HEAD = f"""
     return true;
   }};
 
-  const startTimer = (button) => {{
+  const handleLimitReached = () => {{
+    limitStopPending = true;
+    const stopped = stopRecording();
+    if (stopped) {{
+      stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Recording stopped. Review when ready.`);
+    }} else {{
+      stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Press Stop, then review when ready.`);
+    }}
+  }};
+
+  const tickTimer = () => {{
+    const elapsedMillis = Date.now() - timerStartedAt;
+    secondsLeft = Math.max(0, Math.ceil((limitMillis - elapsedMillis) / 1000));
+    updateCountdown(`Recording... ${{formatSeconds(secondsLeft)}} remaining`);
+  }};
+
+  const startTimer = (button = null) => {{
     if (timerId) {{
       return;
     }}
 
     lastButton = button;
+    limitStopPending = false;
     secondsLeft = limitSeconds;
-    updateCountdown(`Recording... ${{formatSeconds(secondsLeft)}} remaining`);
+    timerStartedAt = Date.now();
+    tickTimer();
+    timerId = window.setInterval(tickTimer, 250);
+    timeoutId = window.setTimeout(handleLimitReached, limitMillis);
+  }};
 
-    timerId = window.setInterval(() => {{
-      secondsLeft -= 1;
-      if (secondsLeft <= 0) {{
-        const stopped = stopRecording();
-        if (stopped) {{
-          stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Recording stopped. Review when ready.`);
-        }} else {{
-          stopTimer(`Reached ${{formatSeconds(limitSeconds)}}. Press Stop, then review when ready.`);
+  const recorderStopMessage = () => (
+    limitStopPending
+      ? `Reached ${{formatSeconds(limitSeconds)}}. Recording stopped. Review when ready.`
+      : "Recording stopped. Review when ready."
+  );
+
+  const bindMediaRecorder = (recorder) => {{
+    if (recorder.__rehearsalLimitBound) {{
+      return recorder;
+    }}
+
+    Object.defineProperty(recorder, "__rehearsalLimitBound", {{
+      value: true,
+      configurable: false,
+    }});
+
+    const nativeStart = recorder.start.bind(recorder);
+    const nativeStop = recorder.stop.bind(recorder);
+
+    recorder.start = (...args) => {{
+      const result = nativeStart(...args);
+      activeRecorder = recorder;
+      limitStopPending = false;
+      startTimer();
+      return result;
+    }};
+
+    recorder.stop = (...args) => {{
+      try {{
+        return nativeStop(...args);
+      }} finally {{
+        if (activeRecorder === recorder) {{
+          activeRecorder = null;
         }}
-        return;
       }}
+    }};
 
-      updateCountdown(`Recording... ${{formatSeconds(secondsLeft)}} remaining`);
-    }}, 1000);
+    recorder.addEventListener("stop", () => {{
+      if (activeRecorder === recorder) {{
+        activeRecorder = null;
+      }}
+      stopTimer(recorderStopMessage());
+      limitStopPending = false;
+    }});
+
+    return recorder;
+  }};
+
+  const installMediaRecorderLimit = () => {{
+    if (!window.MediaRecorder || window.MediaRecorder.__rehearsalLimitInstalled) {{
+      return;
+    }}
+
+    const NativeMediaRecorder = window.MediaRecorder;
+    const LimitedMediaRecorder = function (...args) {{
+      return bindMediaRecorder(new NativeMediaRecorder(...args));
+    }};
+
+    Object.setPrototypeOf(LimitedMediaRecorder, NativeMediaRecorder);
+    LimitedMediaRecorder.prototype = NativeMediaRecorder.prototype;
+    LimitedMediaRecorder.__rehearsalLimitInstalled = true;
+    if (NativeMediaRecorder.isTypeSupported) {{
+      LimitedMediaRecorder.isTypeSupported = NativeMediaRecorder.isTypeSupported.bind(NativeMediaRecorder);
+    }}
+    window.MediaRecorder = LimitedMediaRecorder;
   }};
 
   const wireAudioButtons = () => {{
@@ -226,6 +325,8 @@ COUNTDOWN_HEAD = f"""
     observer.observe(status, {{childList: true, characterData: true, subtree: true}});
   }};
 
+  installMediaRecorderLimit();
+  window.addEventListener("load", installMediaRecorderLimit);
   window.addEventListener("load", wireAudioButtons);
   window.addEventListener("load", watchCompletion);
   window.addEventListener("beforeunload", () => stopTimer());
